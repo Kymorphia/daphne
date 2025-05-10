@@ -1,0 +1,15 @@
+{
+	"authors": [
+		"Element Green <element@kymorphia.com>"
+	],
+	"copyright": "Copyright © 2025, Element Green <element@kymorphia.com>",
+	"dependencies": {
+		"gettext": "~>1.0.4",
+		"gid:gsttag1": {"path": "../gid"},
+		"gid:gtk4": {"path": "../gid"},
+		"gid:gda5": {"path": "../gid"}
+	},
+	"description": "Music player written using giD",
+	"license": "MIT",
+	"name": "daphne"
+}

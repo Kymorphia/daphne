@@ -1,0 +1,8 @@
+.dub
+/daphne
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst
+dub.selections.json
