@@ -109,7 +109,7 @@ class Indexer
     if (isMp3)
       pipe = parseLaunch("filesrc name=filesrc ! id3demux ! fakesink"); // id3demux is fastest for mp3
     else
-      pipe = parseLaunch("filesrc name=filesrc ! decodebin ! fakesink"); // Fallback to decodebin for everything else
+      pipe = parseLaunch("filesrc name=filesrc ! parsebin ! fakesink"); // Fallback to decodebin for everything else
 
     auto fileSrc = (cast(Pipeline)pipe).getByName("filesrc");
     assert(fileSrc);
@@ -143,6 +143,9 @@ class Indexer
             tags[tag] = list.getValueIndex(tag, i);
         }
       });
+
+      if ("title" in tags) // Wait until we get basic tags (some formats, like m4a present multiple tag lists)
+        break;
     }
 
     pipe.setState(State.Null);
