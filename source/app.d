@@ -1,3 +1,4 @@
+import std.algorithm : sort;
 import std.conv : to;
 import std.stdio : writeln;
 import std.string : toStringz;
@@ -7,6 +8,7 @@ import gio.types : ApplicationFlags;
 import glib.types : OptionArg, OptionEntry;
 import glib.variant_dict;
 import glib.variant_type;
+import gobject.types : GTypeEnum;
 import gst.global : gstInit = init_;
 import gtk.application;
 import gtk.application_window;
@@ -103,7 +105,36 @@ MIT license`;
 		if (auto path = getStringOption("index"))
 		{
 			auto indexer = new Indexer;
-			indexer.indexPath(path);
+			auto fileTags = indexer.indexPath(path);
+
+			import std.json;
+			import glib.date;
+			auto fileArray = JSONValue.emptyArray;
+
+			foreach (fileName; fileTags.keys.sort)
+			{
+				auto tagObj = JSONValue(["filename": fileName]);
+
+				foreach (k, v; fileTags[fileName])
+				{
+					if (v.gType == GTypeEnum.String)
+						tagObj[k] = v.get!string;
+					else if (v.gType == GTypeEnum.Uint)
+						tagObj[k] = v.get!uint;
+					else if (v.gType == GTypeEnum.Uint64)
+						tagObj[k] = v.get!ulong;
+					else if (v.gType == GTypeEnum.Double)
+						tagObj[k] = v.get!double;
+					else if (v.gType == Date._getGType)
+						tagObj[k] = v.get!Date.strftime("%Y-%m-%d");
+				}
+
+				fileArray.array ~= tagObj;
+			}
+
+			import std.file : write;
+			write("Library.json", toJSON(fileArray, true));
+
 			return 0;
 		}
 
