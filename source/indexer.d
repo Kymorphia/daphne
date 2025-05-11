@@ -2,6 +2,7 @@ module indexer;
 
 import std.algorithm : map;
 import std.array : assocArray;
+import std.conv : to;
 import std.file : DirEntry, dirEntries, SpanMode;
 import std.path : absolutePath;
 import std.stdio : writefln, writeln;
@@ -21,6 +22,7 @@ import gst.pad;
 import gst.pipeline;
 import gst.tag_list;
 import gst.types : CLOCK_TIME_NONE, ClockTime, MessageType, PadLinkReturn, State;
+import taglib;
 
 class Indexer
 {
@@ -83,7 +85,7 @@ class Indexer
       {
         writeln(e.name);
         auto fileName = absolutePath(e.name);
-        fileTags[fileName] = getTags(fileName);
+        fileTags[fileName] = getTagsTagLib(fileName);
       }
     }
 
@@ -100,7 +102,34 @@ class Indexer
     return false;
   }
 
-  private Value[string] getTags(string fileName)
+  private Value[string] getTagsTagLib(string fileName)
+  {
+    Value[string] tags;
+
+    auto tagFile = new TagFile(fileName);
+
+    if (!tagFile.isValid)
+      return tags;
+
+    if (auto title = tagFile.title)
+      tags["title"] = new Value(title);
+
+    if (auto artist = tagFile.artist)
+      tags["artist"] = new Value(artist);
+
+    if (auto album = tagFile.album)
+      tags["album"] = new Value(album);
+
+    if (auto year = tagFile.year)
+      tags["datetime"] = new Value(year.to!string);
+
+    if (auto track = tagFile.track)
+      tags["track-number"] = new Value(track.to!string);
+
+    return tags;
+  }
+
+  private Value[string] getTagsGst(string fileName)
   {
     bool isMp3 = fileName.length > 4 && fileName[$ - 4 .. $].toLower == ".mp3";
     Value[string] tags;
