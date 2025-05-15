@@ -1,6 +1,8 @@
 module library;
 
 import gettext;
+import gobject.object;
+import gobject.types : GTypeEnum;
 import std.algorithm : map;
 import std.array : insertInPlace;
 import std.conv : to;
@@ -15,29 +17,19 @@ import taglib;
 import daphne;
 import song;
 
+enum UnknownName = "<Unknown>"; /// Name used for unknown artist or album names
+
 /// Song library object
 class Library
 {
-  enum UnknownName = "<Unknown>"; /// Name used for unknown artist or album names
-
   immutable string[] defaultExtensions = [
-    "aac",
-    "aif",
-    "aiff",
-    "ape",
-    "flac",
-    "m4a",
-    "mp3",
-    "ogg",
-    "opus",
-    "wav",
-    "wma",
+    "aac", "aif", "aiff", "ape", "flac", "m4a", "mp3", "ogg", "opus", "wav", "wma",
   ];
 
   this(Daphne daphne)
   {
     _daphne = daphne;
-    treeRoot = new LibraryNode(LibraryNode.Type.Root);
+    unknownArtist = new LibraryArtist(tr!UnknownName);
     _extFilter = defaultExtensions.dup;
   }
 
@@ -57,7 +49,7 @@ class Library
       {
         auto filename = absolutePath(e.name);
 
-        if (filename !in _songFiles)
+        if (filename !in songFiles)
           if (auto song = getTags(filename))
           {
             addSong(song);
@@ -123,95 +115,113 @@ class Library
    */
   void addSong(Song song)
   {
-    _songFiles[song.filename] = song;
+    auto libSong = new LibrarySong(song);
+    songFiles[song.filename] = libSong;
 
-    LibraryNode artistNode;
+    auto artist = song.artist.length > 0 ? artists.require(song.artist, new LibraryArtist(song.artist)) : unknownArtist;
+    auto album = song.album.length > 0 ? artist.albums.require(song.album, new LibraryAlbum(song.album, artist))
+      : artist.unknownAlbum;
 
-    if (song.artist.length > 0) // Is Artist set?
+    bool songSortFunc(LibrarySong a, LibrarySong b) // Sort album songs by track number, showing songs with track numbers first, falling back to sorting by filename
     {
-      artistNode = treeRoot.nodes.get(song.artist, null);
-
-      if (!artistNode) // No node for Artist?
-      { // Create Artist node and add to map
-        artistNode = new LibraryNode(LibraryNode.Type.Artist);
-        artistNode.name = song.artist;
-        treeRoot.nodes[song.artist] = artistNode;
-      }
-    }
-    else // Empty Artist name
-    {
-      if (!treeRoot.unknown) // Unknown artist node not yet created?
-      { // Create unknown artist node
-        treeRoot.unknown = new LibraryNode(LibraryNode.Type.Artist);
-        treeRoot.unknown.name = tr!UnknownName;
-      }
-
-      artistNode = treeRoot.unknown;
+      auto aTrack = a.song.track > 0 ? a.song.track : uint.max;
+      auto bTrack = b.song.track > 0 ? b.song.track : uint.max;
+      return aTrack < bTrack || (aTrack == bTrack && a.song.filename.baseName < b.song.filename.baseName);
     }
 
-    LibraryNode albumNode;
-
-    if (song.album.length > 0) // Is Album set?
+    if (album != artist.unknownAlbum) // If not unknown artist, use normal sorting function
     {
-      albumNode = artistNode.nodes.get(song.album, null);
+      auto sortedSongs = assumeSorted!(songSortFunc)(album.songs);
+      auto index = sortedSongs.lowerBound(libSong).length;
+      album.songs.insertInPlace(index, libSong);
 
-      if (!albumNode) // No node for Album?
-      { // Create Album node and add to map
-        albumNode = new LibraryNode(LibraryNode.Type.Album);
-        albumNode.name = song.album;
-        artistNode.nodes[song.album] = albumNode;
-      }
+      if (album.year == 0 && song.year != 0)
+        album.year = song.year;
     }
-    else // Empty Album name
+    else
     {
-      if (!artistNode.unknown) // Unknown album node not yet created?
-      { // Create unknown album node
-        artistNode.unknown = new LibraryNode(LibraryNode.Type.Album);
-        artistNode.unknown.name = tr!UnknownName;
-      }
-
-      albumNode = artistNode.unknown;
+      auto sortedSongs = assumeSorted!((a, b) => a.song.title < b.song.title)(album.songs); // Sort unknown album songs by title
+      auto index = sortedSongs.lowerBound(libSong).length;
+      album.songs.insertInPlace(index, libSong);
     }
 
-    bool songSortFunc(Song a, Song b) // Sort album songs by track number, showing songs with track numbers first, falling back to sorting by filename
-    {
-      auto aTrack = a.track > 0 ? a.track : uint.max;
-      auto bTrack = b.track > 0 ? b.track : uint.max;
-      return aTrack < bTrack || (aTrack == bTrack && a.filename.baseName < b.filename.baseName);
-    }
+    libSong.album = album;
 
-    auto sortedSongs = assumeSorted!(songSortFunc)(albumNode.songs);
-    auto index = sortedSongs.lowerBound(song).length;
-    albumNode.songs.insertInPlace(index, song);
+    artist.songCount++;
+    album.songCount++;
   }
 
-  LibraryNode treeRoot; // Library node tree root (Artist->Album->Song)
+  LibrarySong[string] songFiles; // Map of filenames to Song objects
+  LibraryArtist unknownArtist; // Unknown artist object
+  LibraryArtist[string] artists; // Map of artist names to LibraryArtist object
 
 private:
   Daphne _daphne; // Daphne app object
-  Song[string] _songFiles; // Map of filenames to Song objects
   string[] _extFilter; // File extension filter
 }
 
-/// A hierarchical node in a Artist->Album->Song tree
-class LibraryNode
+/// An base class for library items (artists, albums and songs)
+class LibraryItem : ObjectWrap
 {
-  /// Node type
-  enum Type
+  this()
   {
-    Root, /// Root node
-    Artist, /// Artist node
-    Album, /// Album node
+    super(GTypeEnum.Object);
   }
 
-  this(Type type)
+  mixin(objectMixin);
+
+  @property string name() { return null; }
+}
+
+/// Artist library node
+class LibraryArtist : LibraryItem
+{
+  this(string name)
   {
-    this.type = type;
+    unknownAlbum = new LibraryAlbum(tr!UnknownName, this);
+    _name = name;
   }
 
-  Type type; /// Node type
-  string name; /// Name of Artist or Album
-  LibraryNode unknown; /// Node for unknown names (Root or Artist nodes only, for unknown Artist or Album respectively)
-  LibraryNode[string] nodes; /// Map of children nodes keyed by name (Artist or Album) -> LibraryNode (Root or Artist nodes only)
-  Song[] songs; /// Songs sorted by track number or filename (for Album nodes only)
+  override @property string name() { return _name; }
+
+  LibraryAlbum unknownAlbum;
+  LibraryAlbum[string] albums;
+  uint songCount; // Count of songs for artist
+
+private:
+  string _name;
+}
+
+/// Album library node
+class LibraryAlbum : LibraryItem
+{
+  this(string name, LibraryArtist artist)
+  {
+    _name = name;
+    this.artist = artist;
+  }
+
+  override @property string name() { return _name; }
+
+  LibraryArtist artist; // Artist of the album
+  LibrarySong[] songs; // Songs sorted by track number followed by filename
+  uint year; // Album year (aggregate from songs), 0 if not set, just gets first valid year at the moment
+  uint songCount; // Count of album songs
+
+private:
+  string _name;
+}
+
+// Song library node (just a simple wrapper to Song at the moment)
+class LibrarySong : LibraryItem
+{
+  this(Song song)
+  {
+    this.song = song;
+  }
+
+  override @property string name() { return song.title; }
+
+  Song song;
+  LibraryAlbum album;
 }

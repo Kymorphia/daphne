@@ -23,15 +23,17 @@ import gtk.paned;
 import gtk.types : Orientation;
 
 import library;
-import music_browser;
+import artist_view;
+import album_view;
 import player;
 import playlist_notebook;
+import song_view;
 
 enum DaphneVersion = "1.0";
 
 class Daphne : Application
 {
-  enum DefaultLibraryTreeWidth = 300;
+  enum DefaultArtistViewWidth = 300;
   enum DefaultPlayerHeight = 200;
   enum LibraryFileName = "library.sqlite";
 
@@ -93,8 +95,8 @@ MIT license`;
 	void onActivate()
 	{
 		auto window = new ApplicationWindow(this);
-    window.maximize;
     window.setShowMenubar = true;
+    window.maximize;
     setMenubar(createMenuBar);
 
     auto vPaned = new Paned(Orientation.Vertical);
@@ -104,19 +106,36 @@ MIT license`;
     hPaned.vexpand = true;
     vPaned.setStartChild(hPaned);
 
-    musicBrowser = new MusicBrowser(this);
-    musicBrowser.hexpand = false;
-    hPaned.setStartChild(musicBrowser);
+    artistView = new ArtistView(this);
+    artistView.hexpand = false;
+    hPaned.setStartChild(artistView);
+    hPaned.position = DefaultArtistViewWidth;
 
-    playlistNotebook = new PlaylistNotebook(this);
-    playlistNotebook.hexpand = true;
-    hPaned.setEndChild(playlistNotebook);
-    hPaned.position = DefaultLibraryTreeWidth;
+    auto hPaned2 = new Paned(Orientation.Horizontal);
+    artistView.hexpand = true;
+    hPaned.setEndChild(hPaned2);
+
+    albumView = new AlbumView(this);
+    albumView.hexpand = true;
+    hPaned2.setStartChild(albumView);
+
+    songView = new SongView(this);
+    songView.hexpand = true;
+    hPaned2.setEndChild(songView);
 
     player = new Player(this);
     player.vexpand = false;
     player.heightRequest = DefaultPlayerHeight;
     vPaned.setEndChild(player);
+
+    artistView.selectionChanged.connect((LibraryArtist[] selectedArtists) {
+      albumView.setArtists(selectedArtists);
+      songView.setArtists(selectedArtists);
+    });
+
+    albumView.selectionChanged.connect((LibraryAlbum[] selectedAlbums) {
+      songView.setAlbums(selectedAlbums);
+    });
 
 		window.present;
 	}
@@ -177,7 +196,9 @@ MIT license`;
   Connection dbConn;
   SqlParser sqlParser;
   Library library;
-  MusicBrowser musicBrowser;
+  ArtistView artistView;
+  AlbumView albumView;
+  SongView songView;
   PlaylistNotebook playlistNotebook;
   Player player;
 }

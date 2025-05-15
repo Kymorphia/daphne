@@ -14,6 +14,12 @@ import gobject.value;
 /// A song object
 class Song
 {
+  enum MinYear = 1000; // Gregorian chants encoded on stone tablets
+  enum MaxYear = 3000; // Time traveling tunes
+  enum MaxTrack = 1000; // That's probably enough tracks per disk
+  enum MaxDisc = 1000; // 1000 disc box set
+  enum MaxLength = 100 * 3600; // 100 hour song length should be good
+
   string filename;
   string title;
   string artist;
@@ -46,10 +52,22 @@ class Song
     album = r[3] ? r[3].get!string : null;
     genre = r[4] ? r[4].get!string : null;
     year = r[5] ? r[5].get!int : 0;
-    track = r[5] ? r[5].get!int : 0;
-    disc = r[5] ? r[5].get!int : 0;
-    length = r[5] ? r[5].get!int : 0;
-    rating = r[5] ? r[5].get!int.to!ubyte.ifThrown(cast(ubyte)0) : 0;
+    track = r[6] ? r[6].get!int : 0;
+    disc = r[7] ? r[7].get!int : 0;
+    length = r[8] ? r[8].get!int : 0;
+    rating = r[9] ? r[9].get!int.to!ubyte.ifThrown(cast(ubyte)0) : 0;
+
+    if (year > 0 && (year < MinYear || year > MaxYear))
+      year = 0;
+
+    if (track > 0 && track > MaxTrack)
+      track = 0;
+
+    if (disc > 0 && disc > MaxDisc)
+      disc = 0;
+
+    if (length > 0 && length > MaxLength)
+      length = 0;
   }
 
   // Get SQL column names for inserts/updates
