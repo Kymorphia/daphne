@@ -4,7 +4,7 @@ import std.algorithm : canFind, endsWith, map, sort, startsWith;
 import std.array : array;
 import std.conv : to;
 import std.signals;
-import std.string : toLower;
+import std.string : cmp, toLower;
 
 import gettext;
 import gio.list_model;
@@ -21,6 +21,7 @@ import gtk.box;
 import gtk.column_view;
 import gtk.column_view_column;
 import gtk.custom_filter;
+import gtk.custom_sorter;
 import gtk.filter_list_model;
 import gtk.label;
 import gtk.list_item;
@@ -29,6 +30,7 @@ import gtk.scrolled_window;
 import gtk.search_entry;
 import gtk.selection_model;
 import gtk.signal_list_item_factory;
+import gtk.sort_list_model;
 import gtk.text;
 import gtk.types : FilterChange, Orientation;
 
@@ -56,20 +58,14 @@ class AlbumView : Box
 
     _listModel = new ListStore(GTypeEnum.Object);
 
-    foreach (artistName; _daphne.library.artists.keys.array.sort)
-    {
-      auto artist = _daphne.library.artists[artistName];
-      foreach (albumName; artist.albums.keys.array.sort)
-      {
-        auto album = artist.albums[albumName];
-        if (album.songCount > 1) // Filter out albums with only 1 song
-          _listModel.append(album);
-      }
-    }
+    foreach (artist; _daphne.library.artists)
+      foreach (album; artist.albums)
+        _listModel.append(album);
 
     _searchFilter = new CustomFilter(&searchFilterFunc);
     auto filterListModel = new FilterListModel(_listModel, _searchFilter); // Used to filter on search text
-    _selModel = new MultiSelection(filterListModel);
+    _sortModel = new SortListModel(filterListModel, new CustomSorter(&albumSorter));
+    _selModel = new MultiSelection(_sortModel);
     _columnView = new ColumnView(_selModel);
     _scrolledWindow.setChild(_columnView);
 
@@ -132,8 +128,22 @@ class AlbumView : Box
   {
     auto album = cast(LibraryAlbum)item;
 
-    return (_searchString.length == 0 || album.name.toLower.canFind(_searchString))
+    return album.songCount > 1 // Filter out albums with only 1 song
+      && (_searchString.length == 0 || album.name.toLower.canFind(_searchString))
       && (_filterArtists.length == 0 || _filterArtists.canFind(album.artist));
+  }
+
+  private int albumSorter(ObjectWrap aObj, ObjectWrap bObj)
+  {
+    auto albumA = cast(LibraryAlbum)aObj;
+    auto albumB = cast(LibraryAlbum)bObj;
+
+    auto retval = cmp(albumA.artist.name, albumB.artist.name);
+
+    if (retval != 0)
+      return retval;
+
+    return cmp(albumA.name, albumB.name);
   }
 
   private void onSelectionModelChanged()
@@ -223,6 +233,14 @@ class AlbumView : Box
     // _selModel.selectionChanged(0, )
   }
 
+  /**
+   * Add an album to the view.
+   */
+  void addAlbum(LibraryAlbum album)
+  {
+    _listModel.append(album);
+  }
+
   mixin Signal!(LibraryAlbum[]) selectionChanged; /// Selected albums changed signal
 
   LibraryAlbum[] selection;
@@ -233,6 +251,7 @@ private:
   ulong _searchChangedHandler; // connectSearchChanged handler
   string _searchString;
   ScrolledWindow _scrolledWindow;
+  SortListModel _sortModel;
   MultiSelection _selModel;
   ListStore _listModel;
   CustomFilter _searchFilter;

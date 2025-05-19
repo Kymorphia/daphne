@@ -57,6 +57,14 @@ class Song
     length = r[8] ? r[8].get!int : 0;
     rating = r[9] ? r[9].get!int.to!ubyte.ifThrown(cast(ubyte)0) : 0;
 
+    validate;
+  }
+
+  /**
+   * Validate the values and set them to defaults if invalid.
+   */
+  void validate()
+  {
     if (year > 0 && (year < MinYear || year > MaxYear))
       year = 0;
 

@@ -1,17 +1,24 @@
 module library;
 
-import gettext;
-import gobject.object;
-import gobject.types : GTypeEnum;
-import std.algorithm : map;
-import std.array : insertInPlace;
+import std.algorithm : canFind, map;
+import std.array : assocArray, insertInPlace;
 import std.conv : to;
 import std.exception : ifThrown;
 import std.file : DirEntry, dirEntries, SpanMode;
 import std.path : absolutePath, baseName;
+import std.parallelism : Task, task;
 import std.range : assumeSorted;
+import std.signals;
 import std.stdio : writeln;
 import std.string : icmp, join;
+import std.typecons : tuple;
+
+import gda.connection;
+import gdk.texture;
+import gettext;
+import glib.bytes;
+import gobject.object;
+import gobject.types : GTypeEnum;
 import taglib;
 
 import daphne;
@@ -33,64 +40,107 @@ class Library
     _extFilter = defaultExtensions.dup;
   }
 
-  /**
-   * Recursively index a directory searching for audio files, extracting their tags, and updating the library songs.
-   * Params:
-   *   path = Path to recursively index
-   *   forceUpdate = Set to true to force an update of existing files (defaults to false)
-   */
-  void indexPath(string path, bool forceUpdate = false)
+  // Data passed to indexer thread
+  private struct IndexerData
   {
+    Library library; // The library instance
+    Connection dbConn; // Database connection
+    string[] mediaPaths; // Duplicated media paths from Prefs
+    string[] extensions; // Duplicated file extensions
+    bool[string] existingFiles; // Hash of existing song files
+  }
+
+  /**
+   * Runs the indexer thread which indexes new songs in a separate thread.
+   */
+  void runIndexerThread()
+  {
+    synchronized _indexerTotalFiles = IndexerTotalFilesUnset;
+
+    IndexerData data;
+    data.library = this;
+    data.dbConn = _daphne.dbConn;
+    data.mediaPaths = _daphne.prefs.mediaPaths.dup;
+    data.extensions = _extFilter.dup;
+    data.existingFiles = songFiles.keys.map!(k => tuple(k, true)).assocArray;
+    _indexerTask = task!indexerThread(data);
+    _indexerTask.executeInNewThread;
+  }
+
+  // Indexer thread function
+  private static void indexerThread(IndexerData data)
+  {
+    string[] newFiles;
+
+    bool extMatches(string ext, string filename)
+    {
+      return filename.length > ext.length + 1 && filename[$ - ext.length - 1] == '.'
+        && ext.icmp(filename[$ - ext.length .. $]) == 0;
+    }
+
+    foreach (path; data.mediaPaths) // Create list of all files which have not been indexed
+      foreach (DirEntry e; dirEntries(path, SpanMode.breadth))
+        if (e.isFile && e.name !in data.existingFiles && data.extensions.canFind!(extMatches)(e.name))
+          newFiles ~= e.name;
+
+    synchronized data.library._indexerTotalFiles = cast(int)newFiles.length;
+
     auto sqlColumns = Song.getSqlColumns;
 
-    foreach (DirEntry e; dirEntries(path, SpanMode.breadth))
+    foreach (i; 0 .. newFiles.length) // Loop on new files, get tags, and add songs to the database and new songs array if valid
     {
-      if (e.isFile && extMatch(e.name))
+      if (auto song = getTags(newFiles[i]))
       {
-        auto filename = absolutePath(e.name);
-
-        if (filename !in songFiles)
-          if (auto song = getTags(filename))
-          {
-            addSong(song);
-            _daphne.dbConn.insertRowIntoTableV("Library", sqlColumns, song.getSqlValues);
-          }
+        data.dbConn.insertRowIntoTableV("Library", sqlColumns, song.getSqlValues); // FIXME - Need to do locking on DB connection if it gets used in main thread
+        synchronized data.library._indexerNewSongs ~= song;
       }
+
+      synchronized data.library._indexerCompletedFiles = cast(int)(i + 1); // Update progress
     }
   }
 
-  private bool extMatch(string fileName)
-  { // Looping on extensions is probably fast enough vs a hash
-    foreach (ext; _extFilter)
-      if (fileName.length > ext.length + 1 && fileName[$ - ext.length - 1] == '.'
-          && ext.icmp(fileName[$ - ext.length .. $]) == 0)
-        return true;
+  /**
+   * Process indexer thread results from GUI thread.
+   * Returns: Indexer progress (nan if still counting files, 0.0 - < 1.0 for progress, 1.0 when completed)
+   */
+  double processIndexerResults()
+  {
+    if (!_indexerTask)
+      return double.nan;
 
-    return false;
+    Song[] newSongs;
+    int total, completed;
+
+    synchronized
+    {
+      total = _indexerTotalFiles;
+      completed = _indexerCompletedFiles;
+
+      newSongs = _indexerNewSongs;
+      _indexerNewSongs.length = 0;
+    }
+
+    foreach (song; newSongs)
+      addSong(song);
+
+    if (completed == total)
+    {
+      _indexerTask.yieldForce;
+      _indexerTask = null;
+    }
+
+    if (total == IndexerTotalFilesUnset)
+      return double.nan;
+    else if (total == 0)
+      return 1.0;
+    else
+      return cast(float)completed / total;
   }
 
-  // Get tags using TagLib, returns null if filename is not a valid TagLib supported file
-  private Song getTags(string filename)
+  /// Returns true if indexer is currently running, false otherwise.
+  bool isIndexerRunning()
   {
-    auto tagFile = new TagFile(filename);
-
-    if (!tagFile.isValid)
-      return null;
-
-    auto song = new Song;
-    song.filename = filename;
-    song.title = tagFile.title;
-    song.artist = tagFile.artist;
-    song.album = tagFile.album;
-    song.genre = tagFile.genre;
-    song.year = tagFile.year;
-    song.track = tagFile.track;
-    song.length = tagFile.length;
-
-    auto discNumberVals = tagFile.getProp("DISCNUMBER");
-    song.disc = discNumberVals.length > 0 ? discNumberVals[0].to!uint.ifThrown(0) : 0;
-
-    return song;
+    return _indexerTask != null;
   }
 
   /// Create the Library songs table if it doesn't already exist
@@ -149,7 +199,21 @@ class Library
 
     artist.songCount++;
     album.songCount++;
+
+    if (artist != unknownArtist && artist.songCount == 2) // Don't consider an Artist object active until at least 2 songs
+      newArtist.emit(artist);
+
+    if (album != artist.unknownAlbum && album.songCount == 2) // Don't consider an Album object active until at least 2 songs
+      newAlbum.emit(album);
+
+    newSong.emit(libSong);
   }
+
+  mixin Signal!(LibraryArtist) newArtist; /// Signal for when a new artist has been added to the library
+  mixin Signal!(LibraryAlbum) newAlbum; /// Signal for when a new album has been added to the library
+  mixin Signal!(LibrarySong) newSong; /// Signal for when a new song has been added to the library
+
+  enum IndexerTotalFilesUnset = -1; // Value for _indexerTotal to indicate that the value has not yet been set by the indexer
 
   LibrarySong[string] songFiles; // Map of filenames to Song objects
   LibraryArtist unknownArtist; // Unknown artist object
@@ -158,6 +222,13 @@ class Library
 private:
   Daphne _daphne; // Daphne app object
   string[] _extFilter; // File extension filter
+
+  Task!(indexerThread, IndexerData)* _indexerTask; // mediaPaths, extensions, existingFiles
+
+  // These members are synchronized between indexer thread and GUI
+  Song[] _indexerNewSongs; // New collected songs from indexer
+  shared int _indexerTotalFiles; // Total files being indexed
+  shared int _indexerCompletedFiles; // Files completed
 }
 
 /// An base class for library items (artists, albums and songs)
@@ -224,4 +295,50 @@ class LibrarySong : LibraryItem
 
   Song song;
   LibraryAlbum album;
+}
+
+/**
+  * Get an album cover from a song file.
+  * Params:
+  *   song = The song to get the album cover from
+  * Returns: Texture of the album cover or null if none/error
+  */
+Texture getAlbumCover(LibrarySong libSong)
+{
+  auto tagFile = new TagFile(libSong.song.filename);
+  if (!tagFile.isValid)
+    return null;
+
+  auto pictureProps = tagFile.getComplexProp("PICTURE");
+  if ("data" !in pictureProps)
+    return null;
+
+  auto bytes = new Bytes(cast(ubyte[])pictureProps["data"].getByteArray);
+  return Texture.newFromBytes(bytes).ifThrown(null);
+}
+
+// Get tags using TagLib, returns null if filename is not a valid TagLib supported file
+private Song getTags(string filename)
+{
+  auto tagFile = new TagFile(filename);
+
+  if (!tagFile.isValid)
+    return null;
+
+  auto song = new Song;
+  song.filename = filename;
+  song.title = tagFile.title;
+  song.artist = tagFile.artist;
+  song.album = tagFile.album;
+  song.genre = tagFile.genre;
+  song.year = tagFile.year;
+  song.track = tagFile.track;
+  song.length = tagFile.length;
+
+  auto discNumberVals = tagFile.getProp("DISCNUMBER");
+  song.disc = discNumberVals.length > 0 ? discNumberVals[0].to!uint.ifThrown(0) : 0;
+
+  song.validate;
+
+  return song;
 }

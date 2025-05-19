@@ -1,9 +1,10 @@
-module song_view;
+module play_queue;
 
 import std.algorithm : canFind, cmp, endsWith, map, sort, startsWith;
-import std.array : array;
+import std.array : array, insertInPlace;
 import std.conv : to;
 import std.format : format;
+import std.random : randomShuffle;
 import std.signals;
 import std.string : toLower;
 
@@ -40,8 +41,8 @@ import daphne;
 import library;
 import song;
 
-/// Song view widget
-class SongView : Box
+/// Play queue widget
+class PlayQueue : Box
 {
   this(Daphne daphne)
   {
@@ -57,12 +58,11 @@ class SongView : Box
     _searchEntry.hexpand = true;
     hbox.append(_searchEntry);
 
-    _queueSongsButton = Button.newFromIconName("go-down");
-    _queueSongsButton.hexpand = false;
-    _queueSongsButton.tooltipText = tr!"Add songs to queue";
-    hbox.append(_queueSongsButton);
+    auto shuffleButton = Button.newFromIconName("media-playlist-shuffle");
+    shuffleButton.hexpand = false;
+    hbox.append(shuffleButton);
 
-    _queueSongsButton.connectClicked(&onAddSongsButtonClicked);
+    shuffleButton.connectClicked(&onShuffleButtonClicked);
 
     _scrolledWindow = new ScrolledWindow;
     _scrolledWindow.setVexpand(true);
@@ -71,19 +71,11 @@ class SongView : Box
 
     _listModel = new ListStore(GTypeEnum.Object);
 
-    foreach (song; _daphne.library.songFiles.values.sort!((a, b) => a.song.title < b.song.title))
-      _listModel.append(song);
-
     _searchFilter = new CustomFilter(&searchFilterFunc);
     auto filterListModel = new FilterListModel(_listModel, _searchFilter); // Used to filter on search text
-    _sortModel = new SortListModel(filterListModel, null);
-    _selModel = new MultiSelection(_sortModel);
+    _selModel = new MultiSelection(filterListModel);
     _columnView = new ColumnView(_selModel);
     _scrolledWindow.setChild(_columnView);
-
-    _artistAlbumTrackSorter = new CustomSorter(&artistAlbumTrackSorter);
-
-    _selModel.connectSelectionChanged(&onSelectionModelChanged);
 
     auto factory = new SignalListItemFactory();
     factory.connectSetup(&onTrackSetup);
@@ -134,21 +126,6 @@ class SongView : Box
     col.resizable = true;
   }
 
-  private void onAddSongsButtonClicked() // Callback for when queue songs button is clicked
-  {
-    if (selection.length == 0) // If no items are selected queue all of them
-    {
-      LibrarySong[] songs;
-
-      foreach (i; 0 .. _sortModel.getNItems)
-        songs ~= cast(LibrarySong)_sortModel.getItem(cast(uint)i);
-
-      queueSongs.emit(songs);
-    }
-    else
-      queueSongs.emit(selection); // Add selected items
-  }
-
   private void onSearchEntryChanged()
   {
     auto newSearch = _searchEntry.text.toLower;
@@ -166,56 +143,20 @@ class SongView : Box
     _searchFilter.changed(change);
   }
 
+  private void onShuffleButtonClicked()
+  {
+    if (isPlaying && _songs.length <= 1)
+      return;
+
+    auto startIndex = isPlaying ? 1 : 0;
+    auto shuffledSongs = _songs[startIndex .. $].randomShuffle; // Cannot shuffle in place, so create a new array then replace it
+    _songs[startIndex .. $] = shuffledSongs;
+    _listModel.splice(startIndex, cast(uint)(_songs.length - startIndex), cast(ObjectWrap[])_songs[startIndex .. $].array);
+  }
+
   private bool searchFilterFunc(ObjectWrap item)
   {
-    auto libSong = cast(LibrarySong)item;
-
-    return (_searchString.length == 0 || libSong.name.toLower.canFind(_searchString)) // No search or search matches?
-      && (_filterAlbums.length == 0 || _filterAlbums.canFind(libSong.album)) // And no albums filter or album matches
-      && (_filterAlbums.length > 0 || _filterArtists.length == 0 || _filterArtists.canFind(libSong.album.artist)); // And albums filter or no artists filter or artist matches
-  }
-
-  private int artistAlbumTrackSorter(ObjectWrap aObj, ObjectWrap bObj)
-  {
-    auto aSong = cast(LibrarySong)aObj;
-    auto bSong = cast(LibrarySong)bObj;
-
-    if (aSong.song.artist < bSong.song.artist)
-      return -1;
-    else if (aSong.song.artist > bSong.song.artist)
-      return 1;
-    else if (aSong.album.year > bSong.album.year) // Reverse order album year (newest first)
-      return -1;
-    else if (aSong.album.year < bSong.album.year) // Reverse order album year (newest first)
-      return 1;
-    else if (aSong.album.name < bSong.album.name)
-      return -1;
-    else if (aSong.album.name > bSong.album.name)
-      return 1;
-    else if (aSong.song.track < bSong.song.track)
-      return -1;
-    else if (aSong.song.track > bSong.song.track)
-      return 1;
-    else
-      return cmp(aSong.name, bSong.name);
-  }
-
-  private void onSelectionModelChanged()
-  {
-    selection = [];
-    BitsetIter iter;
-    uint position;
-
-    if (BitsetIter.initFirst(iter, _selModel.getSelection, position))
-    {
-      do
-      {
-        selection ~= cast(LibrarySong)_selModel.getItem(position);
-      }
-      while (iter.next(position));
-    }
-
-    selectionChanged.emit(selection);
+    return (_searchString.length == 0 || (cast(LibrarySong)item).name.toLower.canFind(_searchString)); // No search or search matches?
   }
 
   private void onTrackSetup(ListItem listItem)
@@ -306,57 +247,77 @@ class SongView : Box
   }
 
   /**
-   * Set the filter of artists to show songs for.
+   * Append songs to the queue.
    * Params:
-   *   artists = List of artists to filter by or empty/null to not filter
+   *   songs = Songs to append
    */
-  void setArtists(LibraryArtist[] artists)
+  void add(LibrarySong[] songs)
   {
-    _filterArtists = artists;
-    _searchFilter.changed(FilterChange.Different);
+    insert(songs, -1);
   }
 
   /**
-   * Set the filter of albums to show songs for.
+   * Insert songs in the queue.
    * Params:
-   *   albums = List of albums to filter by or empty/null to not filter
+   *   songs = The songs to insert
+   *   pos = Position to insert at, -1 appends, 0 is not valid when queue is playing
    */
-  void setAlbums(LibraryAlbum[] albums)
+  void insert(LibrarySong[] songs, int pos)
   {
-    _filterAlbums = albums;
-    _searchFilter.changed(FilterChange.Different);
+    if (songs.length == 0)
+      return;
 
-    // If no albums are assigned sort by the default (song name), otherwise sort by artist, album, track, title
-    _sortModel.sorter = albums.length > 0 ? _artistAlbumTrackSorter : null;
+    if (pos == 0 && isPlaying)
+      pos = 1;
+
+    if (pos < 0 || pos > _songs.length) // Append if negative pos or pos off the end
+      pos = cast(int)_songs.length;
+
+    _listModel.splice(pos, 0, cast(ObjectWrap[])songs);
+    _songs.insertInPlace(pos, songs);
+
+    if (_songs.length == songs.length)
+      currentSong.emit(_songs[0]);
   }
 
   /**
-   * Add a song to the view.
+   * Move the current queue item to the history and return the next song in the queue.
    */
-  void addSong(LibrarySong song)
+  void next()
   {
-    _listModel.append(song);
+    if (_songs.length > 0)
+      remove(0);
   }
 
-  mixin Signal!(LibrarySong[]) selectionChanged; /// Selected songs changed signal
-  mixin Signal!(LibrarySong[]) queueSongs; /// Queue songs action callback
+  /**
+   * Remove a song from the queue.
+   * Params:
+   *   pos = Position of song to remove
+   */
+  void remove(int pos)
+  {
+    if (pos < 0 || pos >= _songs.length)
+      return;
 
-  LibrarySong[] selection;
+    _listModel.remove(pos);
+    _songs = _songs[0 .. pos] ~ _songs[pos + 1 .. $];
+
+    if (pos == 0) // If the current song was removed, update it
+      currentSong.emit(_songs.length > 0 ? _songs[0] : null);
+  }
+
+  mixin Signal!(LibrarySong) currentSong;
 
 private:
   Daphne _daphne;
+  LibrarySong[] _songs;
   SearchEntry _searchEntry;
-  ulong _searchChangedHandler; // connectSearchChanged handler
+  ulong _searchChangedHandler;
   string _searchString;
   ScrolledWindow _scrolledWindow;
   MultiSelection _selModel;
   ListStore _listModel;
   CustomFilter _searchFilter;
-  SortListModel _sortModel;
-  CustomSorter _artistAlbumTrackSorter;
   ColumnView _columnView;
-  Button _queueSongsButton;
-
-  LibraryArtist[] _filterArtists;
-  LibraryAlbum[] _filterAlbums;
+  bool isPlaying;
 }

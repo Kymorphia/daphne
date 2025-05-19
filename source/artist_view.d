@@ -4,7 +4,7 @@ import std.algorithm : canFind, endsWith, map, sort, startsWith;
 import std.array : array;
 import std.conv : to;
 import std.signals;
-import std.string : toLower;
+import std.string : cmp, toLower;
 
 import gettext;
 import gio.list_model;
@@ -18,6 +18,7 @@ import gtk.box;
 import gtk.column_view;
 import gtk.column_view_column;
 import gtk.custom_filter;
+import gtk.custom_sorter;
 import gtk.filter_list_model;
 import gtk.label;
 import gtk.list_item;
@@ -26,6 +27,7 @@ import gtk.scrolled_window;
 import gtk.search_entry;
 import gtk.selection_model;
 import gtk.signal_list_item_factory;
+import gtk.sort_list_model;
 import gtk.text;
 import gtk.types : FilterChange, Orientation;
 
@@ -53,16 +55,13 @@ class ArtistView : Box
 
     _listModel = new ListStore(GTypeEnum.Object);
 
-    foreach (artistName; _daphne.library.artists.keys.array.sort)
-    {
-      auto artist = _daphne.library.artists[artistName];
-      if (artist.songCount > 1) // Filter out artists with only 1 song
-        _listModel.append(artist);
-    }
+    foreach (artist; _daphne.library.artists)
+      _listModel.append(artist);
 
     _searchFilter = new CustomFilter(&searchFilterFunc);
     auto filterListModel = new FilterListModel(_listModel, _searchFilter); // Used to filter on search text
-    _selModel = new MultiSelection(filterListModel);
+    _sortModel = new SortListModel(filterListModel, new CustomSorter(&artistSorter));
+    _selModel = new MultiSelection(_sortModel);
     _columnView = new ColumnView(_selModel);
     _scrolledWindow.setChild(_columnView);
 
@@ -107,7 +106,16 @@ class ArtistView : Box
 
   private bool searchFilterFunc(ObjectWrap item)
   {
-    return _searchString.length == 0 || (cast(LibraryItem)item).name.toLower.canFind(_searchString);
+    auto artist = cast (LibraryArtist)item;
+    return artist.songCount > 1 // Filter out songs with only 1 song
+      && (_searchString.length == 0 || (cast(LibraryItem)item).name.toLower.canFind(_searchString));
+  }
+
+  private int artistSorter(ObjectWrap aObj, ObjectWrap bObj)
+  {
+    auto artistA = cast(LibraryArtist)aObj;
+    auto artistB = cast(LibraryArtist)bObj;
+    return cmp(artistA.name, artistB.name);
   }
 
   private void onSelectionModelChanged()
@@ -156,6 +164,14 @@ class ArtistView : Box
     (cast(Label)listItem.getChild).setText((cast(LibraryArtist)listItem.getItem).songCount.to!string);
   }
 
+  /**
+   * Add an artist to the view.
+   */
+  void addArtist(LibraryArtist artist)
+  {
+    _listModel.append(artist);
+  }
+
   mixin Signal!(LibraryArtist[]) selectionChanged; /// Selected artists changed signal
 
   LibraryArtist[] selection;
@@ -166,6 +182,7 @@ private:
   string _searchString;
   ScrolledWindow _scrolledWindow;
   ListStore _listModel;
+  SortListModel _sortModel;
   MultiSelection _selModel;
   CustomFilter _searchFilter;
   ColumnView _columnView;
