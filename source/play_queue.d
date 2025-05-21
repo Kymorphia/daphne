@@ -14,6 +14,7 @@ import gio.list_store;
 import glib.global : timeoutAdd;
 import glib.source;
 import glib.types : PRIORITY_DEFAULT, SOURCE_REMOVE;
+import glib.variant;
 import gobject.object;
 import gobject.types : GTypeEnum;
 import gobject.value;
@@ -21,6 +22,7 @@ import gtk.bitset;
 import gtk.bitset_iter;
 import gtk.box;
 import gtk.button;
+import gtk.callback_action;
 import gtk.column_view;
 import gtk.column_view_column;
 import gtk.custom_filter;
@@ -32,10 +34,14 @@ import gtk.multi_selection;
 import gtk.scrolled_window;
 import gtk.search_entry;
 import gtk.selection_model;
+import gtk.shortcut;
+import gtk.shortcut_controller;
+import gtk.shortcut_trigger;
 import gtk.signal_list_item_factory;
 import gtk.sort_list_model;
 import gtk.text;
-import gtk.types : FilterChange, Orientation;
+import gtk.types : FilterChange, Orientation, ShortcutScope;
+import gtk.widget;
 
 import daphne;
 import library;
@@ -124,6 +130,30 @@ class PlayQueue : Box
     _columnView.appendColumn(col);
     col.expand = false;
     col.resizable = true;
+
+    auto shortCtrl = new ShortcutController;
+    shortCtrl.setScope(ShortcutScope.Local);
+    addController(shortCtrl);
+
+    shortCtrl.addShortcut(new Shortcut(ShortcutTrigger.parseString("Delete"),
+      new CallbackAction(&onDeleteKeyCallback)));
+  }
+
+  private bool onDeleteKeyCallback(Widget widg, Variant args)
+  {
+    BitsetIter iter;
+    uint position;
+
+    if (BitsetIter.initLast(iter, _selModel.getSelection, position)) // Loop over selection backwards so positions don't change as they are deleted
+    {
+      do
+      {
+        _listModel.remove(position);
+      }
+      while (iter.previous(position));
+    }
+
+    return true;
   }
 
   private void onSearchEntryChanged()
@@ -149,9 +179,9 @@ class PlayQueue : Box
       return;
 
     auto startIndex = isPlaying ? 1 : 0;
-    auto shuffledSongs = _songs[startIndex .. $].randomShuffle; // Cannot shuffle in place, so create a new array then replace it
-    _songs[startIndex .. $] = shuffledSongs;
-    _listModel.splice(startIndex, cast(uint)(_songs.length - startIndex), cast(ObjectWrap[])_songs[startIndex .. $].array);
+    _songs[startIndex .. $] = _songs[startIndex .. $].randomShuffle.array; // Cannot shuffle in place, so create a new array then replace it
+    _listModel.removeAll;
+    _listModel.splice(0, 0, cast(ObjectWrap[])_songs);
   }
 
   private bool searchFilterFunc(ObjectWrap item)
@@ -247,6 +277,30 @@ class PlayQueue : Box
   }
 
   /**
+   * Activate the song at the top of the queue and return it. OK to call if already active, in which case the current song will be returned.
+   * Returns: Active song or null if queue is empty
+   */
+  LibrarySong start()
+  {
+    if (_songs.length > 0)
+    {
+      isPlaying = true;
+      currentSong.emit(_songs[0]);
+      return _songs[0];
+    }
+    else
+      return null;
+  }
+
+  /**
+   * Deactivates the current song which was activated by a call to start().
+   */
+  void stop()
+  {
+    isPlaying = false;
+  }
+
+  /**
    * Append songs to the queue.
    * Params:
    *   songs = Songs to append
@@ -281,12 +335,20 @@ class PlayQueue : Box
   }
 
   /**
-   * Move the current queue item to the history and return the next song in the queue.
+   * Move the current queue item to the history, making the next song the top of queue.
    */
   void next()
   {
     if (_songs.length > 0)
       remove(0);
+  }
+
+  /**
+   * Copy last song from history, add it to the top of the queue and activate it.
+   */
+  void prev()
+  {
+    // FIXME
   }
 
   /**

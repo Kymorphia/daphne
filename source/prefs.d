@@ -111,7 +111,7 @@ class Prefs
 
     prefsDialog.connectCloseRequest(() {
       save;
-      return false;
+      return false; // false allows other handlers to run
     });
 
     prefsDialog.present;
@@ -180,6 +180,8 @@ class Prefs
           stringList.append(mediaPaths[$ - 1]);
           removeBtn.sensitive = true;
           folderBtn.sensitive = true;
+
+          _daphne.library.runIndexerThread; // Re-run indexer (sets unhandledIndexerRequest if already running, to re-run it again)
         }
       });
     });
@@ -207,6 +209,8 @@ class Prefs
         {
           mediaPaths[selected] = file.getPath;
           stringList.splice(selected, 1, mediaPaths[selected .. selected + 1]);
+
+          _daphne.library.runIndexerThread; // Re-run indexer (sets unhandledIndexerRequest if already running, to re-run it again)
         }
       });
     });

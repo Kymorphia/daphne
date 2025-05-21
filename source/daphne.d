@@ -2,6 +2,8 @@ module daphne;
 
 import std.algorithm : sort;
 import std.conv : to;
+import std.exception : ifThrown;
+import std.format : format;
 import std.logger;
 import std.path : buildPath;
 import std.signals;
@@ -12,10 +14,12 @@ import gda.connection;
 import gda.sql_parser;
 import gda.types : ConnectionOptions;
 import gdk.display;
+import gdk.texture;
 import gettext;
 import gio.menu;
 import gio.simple_action;
 import gio.types : ApplicationFlags;
+import glib.bytes;
 import glib.global : getUserConfigDir, timeoutAddSeconds;
 import glib.types : OptionArg, OptionEntry, PRIORITY_DEFAULT, SOURCE_CONTINUE;
 import glib.variant_dict;
@@ -26,8 +30,10 @@ import gtk.application_window;
 import gtk.box;
 import gtk.css_provider;
 import gtk.label;
+import gtk.link_button;
 import gtk.notebook;
 import gtk.paned;
+import gtk.picture;
 import gtk.popover_menu_bar;
 import gtk.progress_bar;
 import gtk.spinner;
@@ -45,6 +51,7 @@ import song_display;
 import song_view;
 
 enum DaphneVersion = "1.0";
+enum DaphneLogoSvg = import("daphne.svg");
 
 class Daphne : Application
 {
@@ -107,6 +114,10 @@ MIT license`;
     action = new SimpleAction("quit", null);
     addAction(action);
     action.connectActivate(() { quit; });
+
+    action = new SimpleAction("about", null);
+    addAction(action);
+    action.connectActivate(() { showAbout; });
   }
 
 	private void onActivate()
@@ -133,6 +144,7 @@ MIT license`;
     StyleContext.addProviderForDisplay(Display.getDefault, provider, STYLE_PROVIDER_PRIORITY_APPLICATION);
 
 		auto mainWindow = new ApplicationWindow(this);
+    mainWindow.title = "Daphne";
     mainWindow.setDefaultSize(DefaultWidth, DefaultHeight);
     mainWindow.maximize;
 
@@ -206,7 +218,6 @@ MIT license`;
     albumView.selectionChanged.connect(&onAlbumViewSelectionChanged);
     songView.queueSongs.connect(&onSongViewQueueSongs);
     playQueue.currentSong.connect(&onPlayQueueCurrentSong);
-    player.nextSong.connect(&onPlayerNextSong);
     library.newArtist.connect(&onNewArtist);
     library.newAlbum.connect(&onNewAlbum);
     library.newSong.connect(&onNewSong);
@@ -250,6 +261,9 @@ MIT license`;
         _indexerSpinner.stop;
         _statusLabel.label = null;
       }
+
+      if (library.unhandledIndexerRequest) // Start a new index operation if one was unhandled (after adding/changing media path during indexing)
+        library.runIndexerThread;
     }
 
     return SOURCE_CONTINUE;
@@ -273,13 +287,7 @@ MIT license`;
 
   private void onPlayQueueCurrentSong(LibrarySong song)
   {
-    player.song = song;
     songDisplay.song = song;
-  }
-
-  private void onPlayerNextSong()
-  {
-    playQueue.next;
   }
 
   private void onNewArtist(LibraryArtist artist)
@@ -308,6 +316,10 @@ MIT license`;
     auto editMenu = new Menu;
     menu.appendSubmenu(tr!"Edit", editMenu);
     editMenu.append(tr!"Preferences", "app.preferences");
+
+    auto helpMenu = new Menu;
+    menu.appendSubmenu(tr!"Help", helpMenu);
+    helpMenu.append(tr!"About", "app.about");
 
     return PopoverMenuBar.newFromModel(menu);
   }
@@ -345,6 +357,42 @@ MIT license`;
     }
 
     return -1; // Activate application
+  }
+
+  void showAbout() // Create and show the about dialog
+  {
+    auto aboutDialog = new Window;
+    aboutDialog.title = tr!"About Daphne";
+
+    auto vbox = new Box(Orientation.Vertical, 4);
+    vbox.marginTop = 4;
+    vbox.marginBottom = 4;
+    vbox.marginStart = 4;
+    vbox.marginEnd = 4;
+    aboutDialog.setChild(vbox);
+
+    auto logo = Picture.newForPaintable(Texture.newFromBytes(new Bytes(cast(ubyte[])DaphneLogoSvg)).ifThrown(null));
+    vbox.append(logo);
+
+    vbox.append(new Label("Daphne " ~ DaphneVersion));
+    vbox.append(LinkButton.newWithLabel("https://www.github.com/Kymorphia/daphne", tr!"Website"));
+
+    auto copyrightLabel = new Label;
+    copyrightLabel.setMarkup((tr!`Copyright 2025 <a href="https://www.kymorphia.com">Kymorphia, PBC</a>`));
+    vbox.append(copyrightLabel);
+
+    vbox.append(new Label(format(tr!"Author: %s", "Element Green <element@kymorphia.com>")));
+
+    auto licenseLabel = new Label;
+    licenseLabel.setMarkup(tr!`Licensed under the <a href="https://opensource.org/licenses/mit-license.php">MIT</a> license.`);
+    vbox.append(licenseLabel);
+    aboutDialog.present;
+  }
+
+  override void quit()
+  {
+    player.stop;
+    super.quit;
   }
 
   Connection dbConn;

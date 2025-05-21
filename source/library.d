@@ -52,9 +52,20 @@ class Library
 
   /**
    * Runs the indexer thread which indexes new songs in a separate thread.
+   * If the thread is currently running, unhandledIndexerRequest member is set to true.
+   * This can be used to rerun the indexer after it is completed.
+   * Gets cleared when runIndexerThread() is able to start the indexer.
    */
   void runIndexerThread()
   {
+    if (isIndexerRunning)
+    {
+      unhandledIndexerRequest = true;
+      return;
+    }
+
+    unhandledIndexerRequest = false;
+
     synchronized _indexerTotalFiles = IndexerTotalFilesUnset;
 
     IndexerData data;
@@ -213,11 +224,12 @@ class Library
   mixin Signal!(LibraryAlbum) newAlbum; /// Signal for when a new album has been added to the library
   mixin Signal!(LibrarySong) newSong; /// Signal for when a new song has been added to the library
 
-  enum IndexerTotalFilesUnset = -1; // Value for _indexerTotal to indicate that the value has not yet been set by the indexer
+  enum IndexerTotalFilesUnset = -1; /// Value for _indexerTotal to indicate that the value has not yet been set by the indexer
 
-  LibrarySong[string] songFiles; // Map of filenames to Song objects
-  LibraryArtist unknownArtist; // Unknown artist object
-  LibraryArtist[string] artists; // Map of artist names to LibraryArtist object
+  LibrarySong[string] songFiles; /// Map of filenames to Song objects
+  LibraryArtist unknownArtist; /// Unknown artist object
+  LibraryArtist[string] artists; /// Map of artist names to LibraryArtist object
+  bool unhandledIndexerRequest; /// Set to true if runIndexerThread() is called when it is already running
 
 private:
   Daphne _daphne; // Daphne app object
@@ -321,6 +333,7 @@ Texture getAlbumCover(LibrarySong libSong)
 private Song getTags(string filename)
 {
   auto tagFile = new TagFile(filename);
+  scope(exit) tagFile.close; // Explicitly close the TagFile to free file handle, rather than waiting for it to be GC'd
 
   if (!tagFile.isValid)
     return null;

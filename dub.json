@@ -1,16 +1,17 @@
 {
+	"name": "daphne",
+	"description": "Advanced audio player written in D using giD",
+	"license": "MIT",
 	"authors": [
 		"Element Green <element@kymorphia.com>"
 	],
 	"copyright": "Copyright © 2025, Element Green <element@kymorphia.com>",
 	"dependencies": {
-		"dee-taglib": {"path": "../dee-taglib"},
 		"gettext": "~>1.0.4",
-		"gid:gsttag1": {"path": "../gid"},
+		"gid:gda5": {"path": "../gid"},
+		"gid:gst1": {"path": "../gid"},
 		"gid:gtk4": {"path": "../gid"},
-		"gid:gda5": {"path": "../gid"}
+		"taglib-d": "~>2.0.1"
 	},
-	"description": "Music player written using giD",
-	"license": "MIT",
-	"name": "daphne"
+	"stringImportPaths": ["images"]
 }

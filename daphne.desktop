@@ -1,0 +1,7 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Daphne
+Comment=Advanced audio player application
+Exec=daphne
+Icon=daphne

@@ -1,7 +1,6 @@
 module player;
 
 import std.format : format;
-import std.signals;
 
 import glib.global : timeoutAddSeconds;
 import glib.types : PRIORITY_DEFAULT, SOURCE_CONTINUE;
@@ -95,34 +94,6 @@ class Player : Box
     return _song;
   }
 
-  @property void song(LibrarySong val)
-  {
-    _song = val;
-    _durationCalculated = false;
-
-    if (_state > State.Ready)
-      _playbin.setState(State.Ready);
-
-    _playbin.setProperty("uri", val ? ("file://" ~ _song.song.filename) : null);
-
-    if (val)
-    {
-      _durationSecs = val.song.length; // Gets updated later to be the real time calculated by GStreamer
-      _songPosScale.setRange(0, _durationSecs);
-      _timePlayedLabel.label = formatSongTime(0);
-      _timeRemainingLabel.label = formatSongTime(_durationSecs);
-
-      if (_state >= State.Paused)
-        _playbin.setState(_state);
-    }
-    else
-    {
-      _songPosScale.setRange(0, 0);
-      _timePlayedLabel.label = "";
-      _timeRemainingLabel.label = "";
-    }
-  }
-
   private bool refreshPosition() // Periodic position refresh callback (also called to immediately update player state)
   {
     if (_state < State.Paused)
@@ -162,13 +133,45 @@ class Player : Box
     return SOURCE_CONTINUE;
   }
 
+  /// Play top of queue or unpause if paused.
+  void play()
+  {
+    if (_state == State.Playing) // Already playing?  Return
+      return;
+
+    if (_state == State.Paused) // Unpause if currently paused
+    {
+      _playbin.setState(State.Playing);
+      _playPauseBtn.setIconName("media-playback-pause");
+      _state = State.Playing;
+      return;
+    }
+
+    _song = _daphne.playQueue.start;
+    if (!_song)
+      return;
+
+    import glib.global : filenameToUri;
+    _playbin.setProperty("uri", _song.song.filename.filenameToUri);
+
+    _durationCalculated = false;
+    _durationSecs = _song.song.length; // Gets updated later to be the real time calculated by GStreamer
+    _songPosScale.setRange(0, _durationSecs);
+    _timePlayedLabel.label = formatSongTime(0);
+    _timeRemainingLabel.label = formatSongTime(_durationSecs);
+
+    _playbin.setState(State.Playing);
+    _playPauseBtn.setIconName("media-playback-pause");
+    _state = State.Playing;
+  }
+
   /**
    * Format time using the number of digits required to represent the total song time.
    * Params:
    *   timeSecs = The time in seconds
    * Returns: String of the form HH:MM:SS where left most quantity only uses as many digits as required and others are 0 padded, total digits used based on the song length
    */
-  string formatSongTime(uint timeSecs)
+  private string formatSongTime(uint timeSecs)
   {
     auto maxval = timeSecs;
 
@@ -181,16 +184,6 @@ class Player : Box
       return format("%02u:%02u", timeSecs / 60, timeSecs % 60);
     else
       return format("%u:%02u:%02u", timeSecs / 3600, (timeSecs % 3600) / 60, timeSecs % 60);
-  }
-
-  void play()
-  {
-    if (_state == State.Playing || !_song)
-      return;
-
-    _playbin.setState(State.Playing);
-    _playPauseBtn.setIconName("media-playback-pause");
-    _state = State.Playing;
   }
 
   void pause()
@@ -210,21 +203,25 @@ class Player : Box
 
     _playbin.setState(State.Ready);
     _playPauseBtn.setIconName("media-playback-start");
+    _playbin.setProperty("uri", "");
     _state = State.Ready;
+
+    _daphne.playQueue.stop;
   }
 
   void next()
   {
-    nextSong.emit;
+    stop;
+    _daphne.playQueue.next;
+    play;
   }
 
   void prev()
   {
-    prevSong.emit;
+    stop;
+    _daphne.playQueue.prev;
+    play;
   }
-
-  mixin Signal!() nextSong;
-  mixin Signal!() prevSong;
 
 private:
   Daphne _daphne;
