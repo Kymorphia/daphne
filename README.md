@@ -1,6 +1,6 @@
 # Daphne
 
-<img src="https://raw.githubusercontent.com/Kymorphia/gid/refs/heads/main/images/daphne-logo.svg" alt="Daphne Logo" align="right">
+<img src="https://raw.githubusercontent.com/Kymorphia/daphne/refs/heads/main/images/daphne.svg" alt="Daphne Logo" align="right">
 
 An advanced audio player written in [D](https://www.dlang.org) using [giD](https://gid.dub.pm).
 
