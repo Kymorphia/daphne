@@ -8,9 +8,9 @@
 	"copyright": "Copyright © 2025, Element Green <element@kymorphia.com>",
 	"dependencies": {
 		"gettext": "~>1.0.4",
-		"gid:gda5": {"path": "../gid"},
-		"gid:gst1": {"path": "../gid"},
-		"gid:gtk4": {"path": "../gid"},
+		"gid:gda5": "==0.9.7",
+		"gid:gst1": "==0.9.7",
+		"gid:gtk4": "==0.9.7",
 		"taglib-d": "~>2.0.1"
 	},
 	"stringImportPaths": ["images"]

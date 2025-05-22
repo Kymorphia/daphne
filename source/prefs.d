@@ -44,8 +44,6 @@ class Prefs
   this(Daphne daphne)
   {
     _daphne = daphne;
-    appDir = buildPath(getUserConfigDir, "daphne");
-    filename = buildPath(appDir, PrefsFilename);
   }
 
   /**
@@ -54,7 +52,9 @@ class Prefs
    */
   void load()
   {
-    if (exists(appDir)) // Ignore case where application directory does not exist yet
+    auto filename = buildPath(_daphne.appDir, PrefsFilename);
+
+    if (exists(filename)) // Ignore case where application directory does not exist yet
     {
       auto js = parseJSON(filename.readText);
 
@@ -63,8 +63,6 @@ class Prefs
       if ("media-paths" in js)
         mediaPaths = js["media-paths"].array.map!(x => x.str).array;
     }
-    else
-      warning("Application config directory '" ~ appDir ~ "' not found");
   }
 
   /**
@@ -73,13 +71,11 @@ class Prefs
    */
   void save()
   {
-    if (!exists(appDir))
-      mkdirRecurse(appDir);
-
     auto js = JSONValue.emptyObject;
     js["version"] = PrefsVersion;
     js["media-paths"] = JSONValue(mediaPaths.map!(x => JSONValue(x)).array);
 
+    auto filename = buildPath(_daphne.appDir, PrefsFilename);
     filename.write(toJSON(js, true /* pretty */, JSONOptions.doNotEscapeSlashes) ~ "\n");
   }
 
@@ -110,7 +106,11 @@ class Prefs
     stack.addTitled(createLibraryGroup(prefsDialog), "library", tr!"Library");
 
     prefsDialog.connectCloseRequest(() {
-      save;
+      try
+        save;
+      catch (Exception e)
+        warning("Failed to save preferences file '" ~ buildPath(_daphne.appDir, PrefsFilename) ~ "': " ~ e.msg);
+
       return false; // false allows other handlers to run
     });
 
@@ -218,7 +218,6 @@ class Prefs
     return vbox;
   }
 
-  string appDir;
   string filename;
   string prefsVersion;
   string[] mediaPaths;

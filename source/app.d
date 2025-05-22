@@ -14,5 +14,5 @@ int main(string[] args)
   auto daphne = new Daphne;
   daphne.run(args);
 
-  return 0;
+  return daphne.aborted ? 1 : 0;
 }

@@ -3,6 +3,7 @@ module daphne;
 import std.algorithm : sort;
 import std.conv : to;
 import std.exception : ifThrown;
+import std.file : exists, mkdirRecurse;
 import std.format : format;
 import std.logger;
 import std.path : buildPath;
@@ -75,6 +76,8 @@ MIT license`;
 	{
 		super("com.kymorphia.Daphne", ApplicationFlags.DefaultFlags);
 
+    appDir = buildPath(getUserConfigDir, "daphne");
+
 		connectActivate(&onActivate);
 		connectStartup(&onStartup);
     connectHandleLocalOptions(&onHandleLocalOptions);
@@ -122,21 +125,52 @@ MIT license`;
 
 	private void onActivate()
 	{
+    try
+    {
+      if (!exists(appDir)) // Create application config directory if it doesn't exist
+        mkdirRecurse(appDir);
+    }
+    catch (Exception e)
+    {
+      abort("Failed to create application config directory '" ~ appDir ~ "': " ~ e.msg);
+      return;
+    }
+
     prefs = new Prefs(this);
 
     try
       prefs.load;
     catch (Exception e)
-      info("Failed to load preferences file '", prefs.filename, "': ", e.message);
+      info("Failed to load preferences file '", prefs.filename, "': ", e.msg);
 
-    // dbConn = Connection.openSqlite(buildPath(getUserConfigDir, "daphne"), LibraryFileName, false);
-    dbConn = Connection.openFromString("SQLite", "DB_DIR=" ~ buildPath(getUserConfigDir, "daphne") ~ ";DB_NAME="
-      ~ LibraryFileName, null, ConnectionOptions.None);
-    assert(dbConn, "Failed to create SQLite database file");
+    try
+      dbConn = Connection.openFromString("SQLite", "DB_DIR=" ~ buildPath(getUserConfigDir, "daphne") ~ ";DB_NAME="
+        ~ LibraryFileName, null, ConnectionOptions.None);
+    catch (Exception e)
+    {
+      abort("Failed to open SQLite database file '" ~ buildPath(getUserConfigDir, "daphne", LibraryFileName) ~ "': "
+        ~ e.msg);
+      return;
+    }
+
     sqlParser = new SqlParser;
     library = new Library(this);
-    library.createTable;
-    library.load;
+
+    try
+      library.createTable;
+    catch (Exception e)
+    {
+      abort("Failed to create SQLite database library table: " ~ e.msg);
+      return;
+    }
+    
+    try
+      library.load;
+    catch (Exception e)
+    {
+      abort("Failed to load SQLite database library table: " ~ e.msg);
+      return;
+    }
 
     // Add a monospace font class
     auto provider = new CssProvider;
@@ -213,7 +247,7 @@ MIT license`;
     player = new Player(this);
     playBox.append(player);
 
-    // FIXME - std.signals doesn't handle lambdas/local functions which would be a lot cleaner here
+    // std.signals doesn't handle lambdas/local functions which would be a lot cleaner here
     artistView.selectionChanged.connect(&onArtistViewSelectionChanged);
     albumView.selectionChanged.connect(&onAlbumViewSelectionChanged);
     songView.queueSongs.connect(&onSongViewQueueSongs);
@@ -391,10 +425,22 @@ MIT license`;
 
   override void quit()
   {
-    player.stop;
+    if (player)
+      player.stop;
+
     super.quit;
   }
 
+  /// Print error message and set aborted boolean, returns from function (does not immediately quit)
+  void abort(string msg)
+  {
+    error(msg);
+    aborted = true;
+    quit;
+  }
+
+  bool aborted; // Set to true if application aborted (should exit with non-zero error code)
+  string appDir;
   Connection dbConn;
   SqlParser sqlParser;
   Library library;
