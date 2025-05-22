@@ -14,6 +14,7 @@ import std.string : icmp, join;
 import std.typecons : tuple;
 
 import gda.connection;
+import gda.types : ConnectionOptions;
 import gdk.texture;
 import gettext;
 import glib.bytes;
@@ -25,6 +26,7 @@ import daphne;
 import song;
 
 enum UnknownName = "<Unknown>"; /// Name used for unknown artist or album names
+enum LibraryFileName = "daphne-library"; /// Library file name (without .db extension)
 
 /// Song library object
 class Library
@@ -40,11 +42,38 @@ class Library
     _extFilter = defaultExtensions.dup;
   }
 
+  /**
+   * Open the library file, load the data to the library, or initialize it
+   */
+  void open()
+  {
+    try
+      _dbConn = Connection.openFromString("SQLite", "DB_DIR=" ~ _daphne.appDir ~ ";DB_NAME=" ~ LibraryFileName, null,
+        ConnectionOptions.None);
+    catch (Exception e)
+      throw new Exception("DB connect error", e);
+
+    try
+      _dbConn.executeNonSelectCommand("CREATE TABLE IF NOT EXISTS Library (" ~ Song.SqlSchema ~ ")");
+    catch (Exception e)
+      throw new Exception("DB table create error", e);
+    
+    try // Load the Library table into library objects
+    {
+      auto dataModel = _dbConn.executeSelectCommand("SELECT " ~ Song.getSqlColumns.join(", ") ~ " FROM Library");
+
+      foreach (row; 0 .. dataModel.getNRows)
+        addSong(new Song(dataModel, row)); // Create Song object from DataModel and row
+    }
+    catch (Exception e)
+      throw new Exception("DB load error", e);
+  }
+
   // Data passed to indexer thread
   private struct IndexerData
   {
     Library library; // The library instance
-    Connection dbConn; // Database connection
+    Connection _dbConn; // Database connection
     string[] mediaPaths; // Duplicated media paths from Prefs
     string[] extensions; // Duplicated file extensions
     bool[string] existingFiles; // Hash of existing song files
@@ -70,7 +99,7 @@ class Library
 
     IndexerData data;
     data.library = this;
-    data.dbConn = _daphne.dbConn;
+    data._dbConn = _dbConn;
     data.mediaPaths = _daphne.prefs.mediaPaths.dup;
     data.extensions = _extFilter.dup;
     data.existingFiles = songFiles.keys.map!(k => tuple(k, true)).assocArray;
@@ -102,7 +131,7 @@ class Library
     {
       if (auto song = getTags(newFiles[i]))
       {
-        data.dbConn.insertRowIntoTableV("Library", sqlColumns, song.getSqlValues); // FIXME - Need to do locking on DB connection if it gets used in main thread
+        data._dbConn.insertRowIntoTableV("Library", sqlColumns, song.getSqlValues); // FIXME - Need to do locking on DB connection if it gets used in main thread
         synchronized data.library._indexerNewSongs ~= song;
       }
 
@@ -152,21 +181,6 @@ class Library
   bool isIndexerRunning()
   {
     return _indexerTask != null;
-  }
-
-  /// Create the Library songs table if it doesn't already exist
-  void createTable()
-  {
-    _daphne.dbConn.executeNonSelectCommand("CREATE TABLE IF NOT EXISTS Library (" ~ Song.SqlSchema ~ ")");
-  }
-
-  /// Load songs from database
-  void load()
-  {
-    auto dataModel = _daphne.dbConn.executeSelectCommand("SELECT " ~ Song.getSqlColumns.join(", ") ~ " FROM Library");
-
-    foreach (row; 0 .. dataModel.getNRows)
-      addSong(new Song(dataModel, row)); // Create Song object from DataModel and row
   }
 
   /**
@@ -233,6 +247,7 @@ class Library
 
 private:
   Daphne _daphne; // Daphne app object
+  Connection _dbConn; // Library database connection
   string[] _extFilter; // File extension filter
 
   Task!(indexerThread, IndexerData)* _indexerTask; // mediaPaths, extensions, existingFiles

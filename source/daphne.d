@@ -11,9 +11,6 @@ import std.signals;
 import std.stdio : writeln;
 import std.string : toStringz;
 
-import gda.connection;
-import gda.sql_parser;
-import gda.types : ConnectionOptions;
 import gdk.display;
 import gdk.texture;
 import gettext;
@@ -56,7 +53,6 @@ enum DaphneLogoSvg = import("daphne.svg");
 
 class Daphne : Application
 {
-  enum LibraryFileName = "daphne-library";
   enum DefaultWidth = 1200;
   enum DefaultHeight = 800;
   enum DefaultArtistViewWidth = 300;
@@ -143,32 +139,13 @@ MIT license`;
     catch (Exception e)
       info("Failed to load preferences file '", prefs.filename, "': ", e.msg);
 
-    try
-      dbConn = Connection.openFromString("SQLite", "DB_DIR=" ~ buildPath(getUserConfigDir, "daphne") ~ ";DB_NAME="
-        ~ LibraryFileName, null, ConnectionOptions.None);
-    catch (Exception e)
-    {
-      abort("Failed to open SQLite database file '" ~ buildPath(getUserConfigDir, "daphne", LibraryFileName) ~ "': "
-        ~ e.msg);
-      return;
-    }
-
-    sqlParser = new SqlParser;
     library = new Library(this);
 
     try
-      library.createTable;
+      library.open;
     catch (Exception e)
     {
-      abort("Failed to create SQLite database library table: " ~ e.msg);
-      return;
-    }
-    
-    try
-      library.load;
-    catch (Exception e)
-    {
-      abort("Failed to load SQLite database library table: " ~ e.msg);
+      abort("Error opening library database: " ~ e.msg);
       return;
     }
 
@@ -441,8 +418,6 @@ MIT license`;
 
   bool aborted; // Set to true if application aborted (should exit with non-zero error code)
   string appDir;
-  Connection dbConn;
-  SqlParser sqlParser;
   Library library;
   Prefs prefs;
 
