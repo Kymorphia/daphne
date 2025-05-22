@@ -5,6 +5,7 @@ import std.array : array, insertInPlace;
 import std.conv : to;
 import std.format : format;
 import std.random : randomShuffle;
+import std.range : retro;
 import std.signals;
 import std.string : toLower;
 
@@ -142,17 +143,42 @@ class PlayQueue : Box
 
   private bool onDeleteKeyCallback(Widget widg, Variant args)
   {
+    uint[2][] ranges;
     BitsetIter iter;
     uint position;
 
-    if (BitsetIter.initLast(iter, _selModel.getSelection, position)) // Loop over selection backwards so positions don't change as they are deleted
+    if (BitsetIter.initFirst(iter, _selModel.getSelection, position)) // Construct ranges of items to remove
     {
-      do
+      uint[2] curRange = [position, position];
+
+      while (iter.next(position))
       {
-        _listModel.remove(position);
+        if (position != curRange[1] + 1)
+        {
+          ranges ~= curRange;
+          curRange = [position, position];
+        }
+        else
+          curRange[1] = position;
       }
-      while (iter.previous(position));
+
+      ranges ~= curRange; // Add last range
     }
+
+    // Loop in reverse so that positions don't change as items are removed
+    foreach (r; ranges.retro)
+      _listModel.splice(r[0], r[1] - r[0] + 1, []);
+
+    // Construct new list by appending the ranges of items not being removed
+    uint lastPos = 0;
+    LibrarySong[] newSongs;
+    foreach (r; ranges)
+    {
+      newSongs ~= _songs[lastPos .. r[0]];
+      lastPos = r[1] + 1;
+    }
+
+    _songs = newSongs ~ _songs[lastPos .. $];
 
     return true;
   }
