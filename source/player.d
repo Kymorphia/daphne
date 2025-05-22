@@ -202,9 +202,17 @@ class Player : Box
       return;
 
     _playbin.setState(State.Ready);
-    _playPauseBtn.setIconName("media-playback-start");
     _playbin.setProperty("uri", "");
     _state = State.Ready;
+
+    _playPauseBtn.setIconName("media-playback-start");
+    _timePlayedLabel.label = "";
+    _timeRemainingLabel.label = "";
+
+    signalHandlerBlock(_songPosScale, _songPosScaleHandler);
+    _songPosScale.setRange(0, 0);
+    _songPosScale.setValue(0);
+    signalHandlerUnblock(_songPosScale, _songPosScaleHandler);
 
     _daphne.playQueue.stop;
   }
