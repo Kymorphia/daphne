@@ -63,6 +63,7 @@ class ArtistView : Box
     _sortModel = new SortListModel(filterListModel, new CustomSorter(&artistSorter));
     _selModel = new MultiSelection(_sortModel);
     _columnView = new ColumnView(_selModel);
+    _columnView.addCssClass("data-table");
     _scrolledWindow.setChild(_columnView);
 
     _selModel.connectSelectionChanged(&onSelectionModelChanged);

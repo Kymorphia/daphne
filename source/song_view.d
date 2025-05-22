@@ -79,6 +79,7 @@ class SongView : Box
     _sortModel = new SortListModel(filterListModel, null);
     _selModel = new MultiSelection(_sortModel);
     _columnView = new ColumnView(_selModel);
+    _columnView.addCssClass("data-table");
     _scrolledWindow.setChild(_columnView);
 
     _artistAlbumTrackSorter = new CustomSorter(&artistAlbumTrackSorter);

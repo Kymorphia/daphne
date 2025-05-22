@@ -81,6 +81,7 @@ class PlayQueue : Box
     auto filterListModel = new FilterListModel(_listModel, _searchFilter); // Used to filter on search text
     _selModel = new MultiSelection(filterListModel);
     _columnView = new ColumnView(_selModel);
+    _columnView.addCssClass("data-table");
     _scrolledWindow.setChild(_columnView);
 
     auto factory = new SignalListItemFactory();
