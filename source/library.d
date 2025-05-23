@@ -5,28 +5,29 @@ import std.array : assocArray, insertInPlace;
 import std.conv : to;
 import std.exception : ifThrown;
 import std.file : DirEntry, dirEntries, SpanMode;
-import std.path : absolutePath, baseName;
+import std.logger;
+import std.path : absolutePath, baseName, buildPath;
 import std.parallelism : Task, task;
-import std.range : assumeSorted;
+import std.range : assumeSorted, repeat;
 import std.signals;
-import std.stdio : writeln;
 import std.string : icmp, join;
 import std.typecons : tuple;
+import std.variant : Variant;
 
-import gda.connection;
-import gda.types : ConnectionOptions;
+import ddbc : createConnection, Connection, PreparedStatement;
 import gdk.texture;
 import gettext;
 import glib.bytes;
 import gobject.object;
 import gobject.types : GTypeEnum;
+import gobject.value;
 import taglib;
 
 import daphne;
 import song;
 
 enum UnknownName = "<Unknown>"; /// Name used for unknown artist or album names
-enum LibraryFileName = "daphne-library"; /// Library file name (without .db extension)
+enum LibraryDatabaseFile = "daphne-library.db"; /// Library file name
 
 /// Song library object
 class Library
@@ -48,25 +49,37 @@ class Library
   void open()
   {
     try
-      _dbConn = Connection.openFromString("SQLite", "DB_DIR=" ~ _daphne.appDir ~ ";DB_NAME=" ~ LibraryFileName, null,
-        ConnectionOptions.None);
+      _dbConn = createConnection("sqlite:" ~ buildPath(_daphne.appDir, LibraryDatabaseFile));
     catch (Exception e)
       throw new Exception("DB connect error", e);
 
+    auto stmt = _dbConn.createStatement;
+    scope(exit) stmt.close;
+
     try
-      _dbConn.executeNonSelectCommand("CREATE TABLE IF NOT EXISTS Library (" ~ Song.SqlSchema ~ ")");
+      stmt.executeUpdate("CREATE TABLE IF NOT EXISTS Library (" ~ Song.SqlSchema ~ ")");
     catch (Exception e)
       throw new Exception("DB table create error", e);
     
     try // Load the Library table into library objects
     {
-      auto dataModel = _dbConn.executeSelectCommand("SELECT " ~ Song.getSqlColumns.join(", ") ~ " FROM Library");
+      auto rs = stmt.executeQuery("SELECT " ~ Song.SqlColumns.join(", ") ~ ", id FROM Library"); // Add "id" field to end
 
-      foreach (row; 0 .. dataModel.getNRows)
-        addSong(new Song(dataModel, row)); // Create Song object from DataModel and row
+      while (rs.next)
+        addSong(new Song(rs));
     }
     catch (Exception e)
-      throw new Exception("DB load error", e);
+      throw new Exception("Library DB load error: " ~ e.msg);
+  }
+
+  /// Close library
+  void close()
+  {
+    if (_dbConn)
+    {
+      _dbConn.close;
+      _dbConn = null;
+    }
   }
 
   // Data passed to indexer thread
@@ -125,13 +138,36 @@ class Library
 
     synchronized data.library._indexerTotalFiles = cast(int)newFiles.length;
 
-    auto sqlColumns = Song.getSqlColumns;
+    PreparedStatement ps;
+
+    try
+    {
+      ps = data._dbConn.prepareStatement("INSERT INTO Library (" ~ Song.SqlColumns.join(", ")
+        ~ ") VALUES (" ~ "?".repeat(Song.SqlColumns.length).join(", ") ~ ")");
+    }
+    catch (Exception e)
+    {
+      error("Library insert prepare error: " ~ e.msg);
+      return;
+    }
+
+    scope(exit) ps.close;
 
     foreach (i; 0 .. newFiles.length) // Loop on new files, get tags, and add songs to the database and new songs array if valid
     {
       if (auto song = getTags(newFiles[i]))
       {
-        data._dbConn.insertRowIntoTableV("Library", sqlColumns, song.getSqlValues); // FIXME - Need to do locking on DB connection if it gets used in main thread
+        song.storeSqlValues(ps);
+
+        try
+        {
+          Variant outIdVal;
+          ps.executeUpdate(outIdVal);
+          song.id = outIdVal.coerce!long;
+        }
+        catch (Exception e)
+          warning("Library insert error: " ~ e.msg);
+
         synchronized data.library._indexerNewSongs ~= song;
       }
 
@@ -192,6 +228,7 @@ class Library
   {
     auto libSong = new LibrarySong(song);
     songFiles[song.filename] = libSong;
+    songIds[song.id] = libSong;
 
     auto artist = song.artist.length > 0 ? artists.require(song.artist, new LibraryArtist(song.artist)) : unknownArtist;
     auto album = song.album.length > 0 ? artist.albums.require(song.album, new LibraryAlbum(song.album, artist))
@@ -241,6 +278,7 @@ class Library
   enum IndexerTotalFilesUnset = -1; /// Value for _indexerTotal to indicate that the value has not yet been set by the indexer
 
   LibrarySong[string] songFiles; /// Map of filenames to Song objects
+  LibrarySong[long] songIds; /// Map of song IDs to Song objects
   LibraryArtist unknownArtist; /// Unknown artist object
   LibraryArtist[string] artists; /// Map of artist names to LibraryArtist object
   bool unhandledIndexerRequest; /// Set to true if runIndexerThread() is called when it is already running

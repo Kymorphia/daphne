@@ -4,11 +4,14 @@ import std.algorithm : canFind, cmp, endsWith, map, sort, startsWith;
 import std.array : array, insertInPlace;
 import std.conv : to;
 import std.format : format;
+import std.logger;
+import std.path : buildPath;
 import std.random : randomShuffle;
 import std.range : retro;
 import std.signals;
-import std.string : toLower;
+import std.string : join, toLower;
 
+import ddbc : createConnection, Connection, PreparedStatement;
 import gettext;
 import gio.list_model;
 import gio.list_store;
@@ -46,7 +49,9 @@ import gtk.widget;
 
 import daphne;
 import library;
-import song;
+import utils : executeSql;
+
+enum PlayQueueDatabaseFile = "daphne-queue.db"; /// Play queue database filename
 
 /// Play queue widget
 class PlayQueue : Box
@@ -165,13 +170,18 @@ class PlayQueue : Box
       ranges ~= curRange; // Add last range
     }
 
+    long[] qIds;
+
     // Loop in reverse so that positions don't change as items are removed
     foreach (r; ranges.retro)
+    {
       _listModel.splice(r[0], r[1] - r[0] + 1, []);
+      qIds ~= _songs[r[0] .. r[1] + 1].map!(x => x.queueId).array;
+    }
 
     // Construct new list by appending the ranges of items not being removed
     uint lastPos = 0;
-    LibrarySong[] newSongs;
+    QueueSong[] newSongs;
     foreach (r; ranges)
     {
       newSongs ~= _songs[lastPos .. r[0]];
@@ -179,6 +189,11 @@ class PlayQueue : Box
     }
 
     _songs = newSongs ~ _songs[lastPos .. $];
+
+    try
+      _dbConn.executeSql("DELETE FROM Queue WHERE id IN (" ~ qIds.map!(x => x.to!string).join(", ") ~ ")");
+    catch (Exception e)
+      error("Queue DB delete error: " ~ e.msg);
 
     return true;
   }
@@ -209,11 +224,24 @@ class PlayQueue : Box
     _songs[startIndex .. $] = _songs[startIndex .. $].randomShuffle.array; // Cannot shuffle in place, so create a new array then replace it
     _listModel.removeAll;
     _listModel.splice(0, 0, cast(ObjectWrap[])_songs);
+
+    _nextQueueId = 1;
+    foreach (i, song; _songs) // Re-sequence the queue IDs
+      song.queueId = _nextQueueId++;
+
+    try
+    {
+      _dbConn.executeSql("DELETE FROM Queue");
+      _dbConn.executeSql("INSERT INTO Queue (id, song_id) VALUES "
+        ~ _songs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.libSong.song.id.to!string ~ ")").join(", "));
+    }
+    catch (Exception e)
+      error("Queue DB shuffle error: " ~ e.msg);
   }
 
   private bool searchFilterFunc(ObjectWrap item)
   {
-    return (_searchString.length == 0 || (cast(LibrarySong)item).name.toLower.canFind(_searchString)); // No search or search matches?
+    return (_searchString.length == 0 || (cast(QueueSong)item).libSong.name.toLower.canFind(_searchString)); // No search or search matches?
   }
 
   private void onTrackSetup(ListItem listItem)
@@ -223,7 +251,7 @@ class PlayQueue : Box
 
   private void onTrackBind(ListItem listItem)
   {
-    auto track = (cast(LibrarySong)listItem.getItem).song.track;
+    auto track = (cast(QueueSong)listItem.getItem).libSong.song.track;
     (cast(Label)listItem.getChild).setText(track > 0 ? track.to!string : null);
   }
 
@@ -236,7 +264,7 @@ class PlayQueue : Box
 
   private void onTitleBind(ListItem listItem)
   {
-    auto song = (cast(LibrarySong)listItem.getItem).song;
+    auto song = (cast(QueueSong)listItem.getItem).libSong.song;
     auto text = cast(Text)listItem.getChild;
     text.getBuffer.setText(song.title.length > 0 ? song.title : tr!UnknownName, -1);
     text.setEditable(false);
@@ -254,7 +282,7 @@ class PlayQueue : Box
 
   private void onArtistBind(ListItem listItem)
   {
-    auto song = (cast(LibrarySong)listItem.getItem).song;
+    auto song = (cast(QueueSong)listItem.getItem).libSong.song;
     auto text = cast(Text)listItem.getChild;
     text.getBuffer.setText(song.artist.length > 0 ? song.artist : tr!UnknownName, -1);
     text.setEditable(false);
@@ -272,7 +300,7 @@ class PlayQueue : Box
 
   private void onAlbumBind(ListItem listItem)
   {
-    auto song = (cast(LibrarySong)listItem.getItem).song;
+    auto song = (cast(QueueSong)listItem.getItem).libSong.song;
     auto text = cast(Text)listItem.getChild;
     text.getBuffer.setText(song.album.length > 0 ? song.album : tr!UnknownName, -1);
     text.setEditable(false);
@@ -288,7 +316,7 @@ class PlayQueue : Box
 
   private void onLengthBind(ListItem listItem)
   {
-    auto length = (cast(LibrarySong)listItem.getItem).song.length;
+    auto length = (cast(QueueSong)listItem.getItem).libSong.song.length;
     (cast(Label)listItem.getChild).setText(length > 0 ? format("%u:%02u", length / 60, length % 60) : null);
   }
 
@@ -299,8 +327,61 @@ class PlayQueue : Box
 
   private void onYearBind(ListItem listItem)
   {
-    auto year = (cast(LibrarySong)listItem.getItem).song.year;
+    auto year = (cast(QueueSong)listItem.getItem).libSong.song.year;
     (cast(Label)listItem.getChild).setText(year > 0 ? year.to!string : null);
+  }
+
+  /**
+   * Open the queue file, load the data to the queue, or initialize it
+   */
+  void open()
+  {
+    try
+      _dbConn = createConnection("sqlite:" ~ buildPath(_daphne.appDir, PlayQueueDatabaseFile));
+    catch (Exception e)
+      throw new Exception("DB connect error: " ~ e.msg);
+
+    auto stmt = _dbConn.createStatement;
+    scope(exit) stmt.close;
+
+    try
+    {
+      stmt.executeUpdate("CREATE TABLE IF NOT EXISTS Queue (id INTEGER PRIMARY KEY, song_id int)");
+      stmt.executeUpdate("CREATE TABLE IF NOT EXISTS History (id INTEGER PRIMARY KEY, song_id int, timestamp int)");
+    }
+    catch (Exception e)
+      throw new Exception("Queue DB table create error: " ~ e.msg);
+
+    try // Load the Queue table
+    {
+      auto rs = stmt.executeQuery("SELECT id, song_id FROM Queue ORDER BY id");
+
+      while (rs.next)
+      {
+        if (auto song = _daphne.library.songIds.get(rs.getLong(2), null))
+        {
+          auto id = rs.getLong(2);
+          _songs ~= new QueueSong(rs.getLong(1), song);
+
+          if (id >= _nextQueueId)
+            _nextQueueId = id + 1;
+        }
+      }
+    }
+    catch (Exception e)
+      throw new Exception("Queue DB load error: " ~ e.msg);
+
+    _listModel.splice(0, 0, cast(ObjectWrap[])_songs);
+  }
+
+  /// Close queue database
+  void close()
+  {
+    if (_dbConn)
+    {
+      _dbConn.close;
+      _dbConn = null;
+    }
   }
 
   /**
@@ -312,8 +393,8 @@ class PlayQueue : Box
     if (_songs.length > 0)
     {
       isPlaying = true;
-      currentSong.emit(_songs[0]);
-      return _songs[0];
+      currentSong.emit(_songs[0].libSong);
+      return _songs[0].libSong;
     }
     else
       return null;
@@ -354,11 +435,19 @@ class PlayQueue : Box
     if (pos < 0 || pos > _songs.length) // Append if negative pos or pos off the end
       pos = cast(int)_songs.length;
 
-    _listModel.splice(pos, 0, cast(ObjectWrap[])songs);
-    _songs.insertInPlace(pos, songs);
+    QueueSong[] qSongs;
 
-    if (_songs.length == songs.length)
-      currentSong.emit(_songs[0]);
+    foreach (song; songs)
+      qSongs ~= new QueueSong(_nextQueueId++, song);
+
+    _listModel.splice(pos, 0, cast(ObjectWrap[])qSongs);
+    _songs.insertInPlace(pos, qSongs);
+
+    try
+      _dbConn.executeSql("INSERT INTO Queue (id, song_id) VALUES "
+        ~ qSongs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.libSong.song.id.to!string ~ ")").join(", "));
+    catch (Exception e)
+      error("Queue DB insert error: " ~ e.msg);
   }
 
   /**
@@ -388,18 +477,28 @@ class PlayQueue : Box
     if (pos < 0 || pos >= _songs.length)
       return;
 
+    auto qSong = _songs[pos];
+    _dbConn.executeSql("DELETE FROM Queue WHERE id=" ~ qSong.queueId.to!string);
+
     _listModel.remove(pos);
     _songs = _songs[0 .. pos] ~ _songs[pos + 1 .. $];
 
     if (pos == 0) // If the current song was removed, update it
-      currentSong.emit(_songs.length > 0 ? _songs[0] : null);
+    {
+      currentSong.emit(_songs.length > 0 ? _songs[0].libSong : null);
+
+      if (_songs.length == 0)
+        _nextQueueId = 1; // Reset next queue ID when empty
+    }
   }
 
   mixin Signal!(LibrarySong) currentSong;
 
 private:
   Daphne _daphne;
-  LibrarySong[] _songs;
+  Connection _dbConn;
+  QueueSong[] _songs;
+  long _nextQueueId = 1;
   SearchEntry _searchEntry;
   ulong _searchChangedHandler;
   string _searchString;
@@ -409,4 +508,25 @@ private:
   CustomFilter _searchFilter;
   ColumnView _columnView;
   bool isPlaying;
+}
+
+/// Song entry in the queue
+class QueueSong : ObjectWrap
+{
+  this()
+  {
+    super(GTypeEnum.Object);
+  }
+
+  this(long id, LibrarySong song)
+  {
+    super(GTypeEnum.Object);
+    queueId = id;
+    libSong = song;
+  }
+
+  mixin(objectMixin);
+
+  long queueId; // Queue table row ID
+  LibrarySong libSong; // The song for this queue entry
 }

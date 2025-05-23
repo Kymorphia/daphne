@@ -36,7 +36,6 @@ import gtk.types : FilterChange, Orientation;
 
 import daphne;
 import library;
-import song;
 
 /// Album view widget
 class AlbumView : Box

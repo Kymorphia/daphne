@@ -1,17 +1,8 @@
 module song;
 
-import std.algorithm : map;
-import std.array : array;
-import std.conv : to;
-import std.exception : ifThrown;
-import std.range : iota;
+import ddbc : PreparedStatement, ResultSet;
 
-import gda.data_model;
-import gda.global : valueIsNull;
-import gobject.types : GTypeEnum;
-import gobject.value;
-
-/// A song object
+/// A song structure for POD loading from DB
 class Song
 {
   enum MinYear = 1000; // Gregorian chants encoded on stone tablets
@@ -20,6 +11,7 @@ class Song
   enum MaxDisc = 1000; // 1000 disc box set
   enum MaxLength = 100 * 3600; // 100 hour song length should be good
 
+  long id;
   string filename;
   string title;
   string artist;
@@ -36,26 +28,23 @@ class Song
   }
 
   /**
-   * Create a song from a row in a DataModel (as returned from an SQL select statement).
+   * Create a new Song object from a ddbc ResultSet.
    * Params:
-   *   model = The data model
-   *   row = The row index
+   *   rs = The result set
    */
-  this(DataModel model, int row)
-  { // Get the column values for the row
-    auto r = getSqlColumns.length.iota.map!(col => model.getValueAt(cast(int)col, row))
-      .map!(v => !v.valueIsNull ? v : null).array; // GTypeEnum.Invalid is used for null
-
-    filename = r[0] ? r[0].get!string : null;
-    title = r[1] ? r[1].get!string : null;
-    artist = r[2] ? r[2].get!string : null;
-    album = r[3] ? r[3].get!string : null;
-    genre = r[4] ? r[4].get!string : null;
-    year = r[5] ? r[5].get!int : 0;
-    track = r[6] ? r[6].get!int : 0;
-    disc = r[7] ? r[7].get!int : 0;
-    length = r[8] ? r[8].get!int : 0;
-    rating = r[9] ? r[9].get!int.to!ubyte.ifThrown(cast(ubyte)0) : 0;
+  this(ResultSet rs)
+  {
+    filename = rs.getString(1);
+    title = rs.getString(2);
+    artist = rs.getString(3);
+    album = rs.getString(4);
+    genre = rs.getString(5);
+    year = rs.getUint(6);
+    track = rs.getUint(7);
+    disc = rs.getUint(8);
+    length = rs.getUint(9);
+    rating = rs.getUbyte(10);
+    id = rs.getLong(11);
 
     validate;
   }
@@ -78,28 +67,27 @@ class Song
       length = 0;
   }
 
-  // Get SQL column names for inserts/updates
-  static string[] getSqlColumns()
+  /**
+   * Store song SQL field values to prepared statement.
+   */
+  void storeSqlValues(PreparedStatement ps)
   {
-    return ["filename", "title", "artist", "album", "genre", "year", "track", "disc", "length", "rating"];
+    ps.setString(1, filename);
+    ps.setString(2, title);
+    ps.setString(3, artist);
+    ps.setString(4, album);
+    ps.setString(5, genre);
+    ps.setUint(6, year);
+    ps.setUint(7, track);
+    ps.setUint(8, disc);
+    ps.setUint(9, length);
+    ps.setUbyte(10, rating);
   }
 
-  // Get SQL field values for inserts/updates
-  Value[] getSqlValues()
-  {
-    return [
-      new Value(filename),
-      new Value(title),
-      new Value(artist),
-      new Value(album),
-      new Value(genre),
-      new Value(year),
-      new Value(track),
-      new Value(disc),
-      new Value(length),
-      new Value(rating),
-    ];
-  }
+  // Get SQL column names for inserts/updates, does not include id column
+  static immutable(string[]) SqlColumns = [
+    "filename", "title", "artist", "album", "genre", "year", "track", "disc", "length", "rating"
+  ];
 
   // SQL field schema for creating library song table
   enum SqlSchema = "id INTEGER PRIMARY KEY,"

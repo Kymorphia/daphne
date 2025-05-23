@@ -221,6 +221,14 @@ MIT license`;
     playQueue = new PlayQueue(this);
     playBox.append(playQueue);
 
+    try
+      playQueue.open;
+    catch (Exception e)
+    {
+      abort("Error opening queue database: " ~ e.msg);
+      return;
+    }
+
     player = new Player(this);
     playBox.append(player);
 
@@ -404,6 +412,12 @@ MIT license`;
   {
     if (player)
       player.stop;
+
+    if (library)
+      library.close;
+
+    if (playQueue)
+      playQueue.close;
 
     super.quit;
   }
