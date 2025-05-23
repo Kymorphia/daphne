@@ -192,9 +192,11 @@ MIT license`;
     auto hPaned = new Paned(Orientation.Horizontal);
     hPaned.resizeStartChild = false;
     hPaned.resizeEndChild = true;
+    hPaned.marginBottom = 2;
     vPaned.setStartChild(hPaned);
 
     artistView = new ArtistView(this);
+    artistView.marginEnd = 2;
     hPaned.setStartChild(artistView);
     hPaned.position = DefaultArtistViewWidth;
 
@@ -202,24 +204,32 @@ MIT license`;
     hPaned.setEndChild(hPaned2);
 
     albumView = new AlbumView(this);
+    albumView.marginStart = 2;
+    albumView.marginEnd = 2;
     hPaned2.setStartChild(albumView);
 
     songView = new SongView(this);
+    songView.marginStart = 2;
     hPaned2.setEndChild(songView);
 
     auto hpanedPlayer = new Paned(Orientation.Horizontal);
     hpanedPlayer.resizeStartChild = false;
     hpanedPlayer.resizeEndChild = true;
+    hpanedPlayer.marginTop = 2;
     vPaned.setEndChild(hpanedPlayer);
 
     songDisplay = new SongDisplay(this);
     hpanedPlayer.setStartChild(songDisplay);
 
     auto playBox = new Box(Orientation.Vertical, 0);
+    playBox.marginStart = 2;
     hpanedPlayer.setEndChild(playBox);
 
     playQueue = new PlayQueue(this);
     playBox.append(playQueue);
+
+    player = new Player(this);
+    playBox.append(player);
 
     try
       playQueue.open;
@@ -228,9 +238,6 @@ MIT license`;
       abort("Error opening queue database: " ~ e.msg);
       return;
     }
-
-    player = new Player(this);
-    playBox.append(player);
 
     // std.signals doesn't handle lambdas/local functions which would be a lot cleaner here
     artistView.selectionChanged.connect(&onArtistViewSelectionChanged);
