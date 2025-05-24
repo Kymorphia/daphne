@@ -233,7 +233,7 @@ class PlayQueue : Box
     {
       _dbConn.executeSql("DELETE FROM Queue");
       _dbConn.executeSql("INSERT INTO Queue (id, song_id) VALUES "
-        ~ _songs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.libSong.song.id.to!string ~ ")").join(", "));
+        ~ _songs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.libSong.id.to!string ~ ")").join(", "));
     }
     catch (Exception e)
       error("Queue DB shuffle error: " ~ e.msg);
@@ -251,7 +251,7 @@ class PlayQueue : Box
 
   private void onTrackBind(ListItem listItem)
   {
-    auto track = (cast(QueueSong)listItem.getItem).libSong.song.track;
+    auto track = (cast(QueueSong)listItem.getItem).libSong.track;
     (cast(Label)listItem.getChild).setText(track > 0 ? track.to!string : null);
   }
 
@@ -264,7 +264,7 @@ class PlayQueue : Box
 
   private void onTitleBind(ListItem listItem)
   {
-    auto song = (cast(QueueSong)listItem.getItem).libSong.song;
+    auto song = (cast(QueueSong)listItem.getItem).libSong;
     auto text = cast(Text)listItem.getChild;
     text.getBuffer.setText(song.title.length > 0 ? song.title : tr!UnknownName, -1);
     text.setEditable(false);
@@ -282,7 +282,7 @@ class PlayQueue : Box
 
   private void onArtistBind(ListItem listItem)
   {
-    auto song = (cast(QueueSong)listItem.getItem).libSong.song;
+    auto song = (cast(QueueSong)listItem.getItem).libSong;
     auto text = cast(Text)listItem.getChild;
     text.getBuffer.setText(song.artist.length > 0 ? song.artist : tr!UnknownName, -1);
     text.setEditable(false);
@@ -300,7 +300,7 @@ class PlayQueue : Box
 
   private void onAlbumBind(ListItem listItem)
   {
-    auto song = (cast(QueueSong)listItem.getItem).libSong.song;
+    auto song = (cast(QueueSong)listItem.getItem).libSong;
     auto text = cast(Text)listItem.getChild;
     text.getBuffer.setText(song.album.length > 0 ? song.album : tr!UnknownName, -1);
     text.setEditable(false);
@@ -316,7 +316,7 @@ class PlayQueue : Box
 
   private void onLengthBind(ListItem listItem)
   {
-    auto length = (cast(QueueSong)listItem.getItem).libSong.song.length;
+    auto length = (cast(QueueSong)listItem.getItem).libSong.length;
     (cast(Label)listItem.getChild).setText(length > 0 ? format("%u:%02u", length / 60, length % 60) : null);
   }
 
@@ -327,7 +327,7 @@ class PlayQueue : Box
 
   private void onYearBind(ListItem listItem)
   {
-    auto year = (cast(QueueSong)listItem.getItem).libSong.song.year;
+    auto year = (cast(QueueSong)listItem.getItem).libSong.year;
     (cast(Label)listItem.getChild).setText(year > 0 ? year.to!string : null);
   }
 
@@ -445,7 +445,7 @@ class PlayQueue : Box
 
     try
       _dbConn.executeSql("INSERT INTO Queue (id, song_id) VALUES "
-        ~ qSongs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.libSong.song.id.to!string ~ ")").join(", "));
+        ~ qSongs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.libSong.id.to!string ~ ")").join(", "));
     catch (Exception e)
       error("Queue DB insert error: " ~ e.msg);
   }

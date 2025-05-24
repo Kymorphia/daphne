@@ -70,7 +70,7 @@ class SongView : Box
 
     _listModel = new ListStore(GTypeEnum.Object);
 
-    foreach (song; _daphne.library.songFiles.values.sort!((a, b) => a.song.title < b.song.title))
+    foreach (song; _daphne.library.songFiles.values.sort!((a, b) => a.title < b.title))
       _listModel.append(song);
 
     _searchFilter = new CustomFilter(&searchFilterFunc);
@@ -171,8 +171,8 @@ class SongView : Box
     auto libSong = cast(LibrarySong)item;
 
     return (_searchString.length == 0 || libSong.name.toLower.canFind(_searchString)) // No search or search matches?
-      && (_filterAlbums.length == 0 || _filterAlbums.canFind(libSong.album)) // And no albums filter or album matches
-      && (_filterAlbums.length > 0 || _filterArtists.length == 0 || _filterArtists.canFind(libSong.album.artist)); // And albums filter or no artists filter or artist matches
+      && (_filterAlbums.length == 0 || _filterAlbums.canFind(libSong.libAlbum)) // And no albums filter or album matches
+      && (_filterAlbums.length > 0 || _filterArtists.length == 0 || _filterArtists.canFind(libSong.libAlbum.artist)); // And albums filter or no artists filter or artist matches
   }
 
   private int artistAlbumTrackSorter(ObjectWrap aObj, ObjectWrap bObj)
@@ -180,21 +180,21 @@ class SongView : Box
     auto aSong = cast(LibrarySong)aObj;
     auto bSong = cast(LibrarySong)bObj;
 
-    if (aSong.song.artist < bSong.song.artist)
+    if (aSong.artist < bSong.artist)
       return -1;
-    else if (aSong.song.artist > bSong.song.artist)
+    else if (aSong.artist > bSong.artist)
       return 1;
-    else if (aSong.album.year > bSong.album.year) // Reverse order album year (newest first)
+    else if (aSong.libAlbum.year > bSong.libAlbum.year) // Reverse order album year (newest first)
       return -1;
-    else if (aSong.album.year < bSong.album.year) // Reverse order album year (newest first)
+    else if (aSong.libAlbum.year < bSong.libAlbum.year) // Reverse order album year (newest first)
       return 1;
-    else if (aSong.album.name < bSong.album.name)
+    else if (aSong.libAlbum.name < bSong.libAlbum.name)
       return -1;
-    else if (aSong.album.name > bSong.album.name)
+    else if (aSong.libAlbum.name > bSong.libAlbum.name)
       return 1;
-    else if (aSong.song.track < bSong.song.track)
+    else if (aSong.track < bSong.track)
       return -1;
-    else if (aSong.song.track > bSong.song.track)
+    else if (aSong.track > bSong.track)
       return 1;
     else
       return cmp(aSong.name, bSong.name);
@@ -225,7 +225,7 @@ class SongView : Box
 
   private void onTrackBind(ListItem listItem)
   {
-    auto track = (cast(LibrarySong)listItem.getItem).song.track;
+    auto track = (cast(LibrarySong)listItem.getItem).track;
     (cast(Label)listItem.getChild).setText(track > 0 ? track.to!string : null);
   }
 
@@ -238,7 +238,7 @@ class SongView : Box
 
   private void onTitleBind(ListItem listItem)
   {
-    auto song = (cast(LibrarySong)listItem.getItem).song;
+    auto song = (cast(LibrarySong)listItem.getItem);
     auto text = cast(Text)listItem.getChild;
     text.getBuffer.setText(song.title.length > 0 ? song.title : tr!UnknownName, -1);
     text.setEditable(false);
@@ -256,7 +256,7 @@ class SongView : Box
 
   private void onArtistBind(ListItem listItem)
   {
-    auto song = (cast(LibrarySong)listItem.getItem).song;
+    auto song = (cast(LibrarySong)listItem.getItem);
     auto text = cast(Text)listItem.getChild;
     text.getBuffer.setText(song.artist.length > 0 ? song.artist : tr!UnknownName, -1);
     text.setEditable(false);
@@ -274,7 +274,7 @@ class SongView : Box
 
   private void onAlbumBind(ListItem listItem)
   {
-    auto song = (cast(LibrarySong)listItem.getItem).song;
+    auto song = (cast(LibrarySong)listItem.getItem);
     auto text = cast(Text)listItem.getChild;
     text.getBuffer.setText(song.album.length > 0 ? song.album : tr!UnknownName, -1);
     text.setEditable(false);
@@ -290,7 +290,7 @@ class SongView : Box
 
   private void onLengthBind(ListItem listItem)
   {
-    auto length = (cast(LibrarySong)listItem.getItem).song.length;
+    auto length = (cast(LibrarySong)listItem.getItem).length;
     (cast(Label)listItem.getChild).setText(length > 0 ? format("%u:%02u", length / 60, length % 60) : null);
   }
 
@@ -301,7 +301,7 @@ class SongView : Box
 
   private void onYearBind(ListItem listItem)
   {
-    auto year = (cast(LibrarySong)listItem.getItem).song.year;
+    auto year = (cast(LibrarySong)listItem.getItem).year;
     (cast(Label)listItem.getChild).setText(year > 0 ? year.to!string : null);
   }
 

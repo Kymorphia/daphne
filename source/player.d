@@ -152,10 +152,10 @@ class Player : Box
       return;
 
     import glib.global : filenameToUri;
-    _playbin.setProperty("uri", _song.song.filename.filenameToUri);
+    _playbin.setProperty("uri", _song.filename.filenameToUri);
 
     _durationCalculated = false;
-    _durationSecs = _song.song.length; // Gets updated later to be the real time calculated by GStreamer
+    _durationSecs = _song.length; // Gets updated later to be the real time calculated by GStreamer
     _songPosScale.setRange(0, _durationSecs);
     _timePlayedLabel.label = formatSongTime(0);
     _timeRemainingLabel.label = formatSongTime(_durationSecs);

@@ -80,16 +80,16 @@ class SongDisplay : Box
   {
     _song = val;
 
-    _titleLabel.label = _song ? _song.song.title : "";
-    _titleLabel.tooltipText = _song ? _song.song.title : "";
+    _titleLabel.label = _song ? _song.title : "";
+    _titleLabel.tooltipText = _song ? _song.title : "";
 
-    _artistLabel.label = _song ? _song.song.artist : "";
-    _artistLabel.tooltipText = _song ? _song.song.title : "";
+    _artistLabel.label = _song ? _song.artist : "";
+    _artistLabel.tooltipText = _song ? _song.title : "";
 
-    _albumLabel.label = _song ? _song.song.album : "";
-    _albumLabel.tooltipText = _song ? _song.song.title : "";
+    _albumLabel.label = _song ? _song.album : "";
+    _albumLabel.tooltipText = _song ? _song.title : "";
 
-    auto texture = _song ? getAlbumCover(_song) : null;
+    auto texture = _song ? _song.getPicture : null;
 
     picture.setPaintable(texture ? texture : _goldRecord);
     picture.queueDraw; // FIXME - Sometimes does not update without this, when same texture size maybe? Seems like a Gtk bug.

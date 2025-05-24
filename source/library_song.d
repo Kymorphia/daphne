@@ -1,9 +1,18 @@
-module song;
+module library_song;
+
+import std.conv : to;
+import std.exception : ifThrown;
 
 import ddbc : PreparedStatement, ResultSet;
+import gdk.texture;
+import glib.bytes;
+import taglib;
+
+import library_album;
+import library_item;
 
 /// A song structure for POD loading from DB
-class Song
+class LibrarySong : LibraryItem
 {
   enum MinYear = 1000; // Gregorian chants encoded on stone tablets
   enum MaxYear = 3000; // Time traveling tunes
@@ -22,6 +31,7 @@ class Song
   uint disc;
   uint length;
   ubyte rating;
+  LibraryAlbum libAlbum;
 
   this()
   {
@@ -47,6 +57,57 @@ class Song
     id = rs.getLong(11);
 
     validate;
+  }
+
+  /**
+   * Create a song from the tags loaded from a taglib file.
+   * Params:
+   *   filename = The name of the file to load tags from
+   * Returns: The new LibrarySong object or null if filename is not a valid taglib file or an error occurred
+   */
+  static LibrarySong createFromTagFile(string filename)
+  {
+    auto tagFile = new TagFile(filename);
+    scope(exit) tagFile.close; // Explicitly close the TagFile to free file handle, rather than waiting for it to be GC'd
+
+    if (!tagFile.isValid)
+      return null;
+
+    auto song = new LibrarySong;
+    song.filename = filename;
+    song.title = tagFile.title;
+    song.artist = tagFile.artist;
+    song.album = tagFile.album;
+    song.genre = tagFile.genre;
+    song.year = tagFile.year;
+    song.track = tagFile.track;
+    song.length = tagFile.length;
+
+    auto discNumberVals = tagFile.getProp("DISCNUMBER");
+    song.disc = discNumberVals.length > 0 ? discNumberVals[0].to!uint.ifThrown(0) : 0;
+
+    song.validate;
+    return song;
+  }
+
+  override @property string name() { return title; }
+
+  /**
+    * Get a picture from a song file using TagLib.
+    * Returns: Texture of the picture retrieved from the song or null if none/error
+    */
+  Texture getPicture()
+  {
+    auto tagFile = new TagFile(filename);
+    if (!tagFile.isValid)
+      return null;
+
+    auto pictureProps = tagFile.getComplexProp("PICTURE");
+    if ("data" !in pictureProps)
+      return null;
+
+    auto bytes = new Bytes(cast(ubyte[])pictureProps["data"].getByteArray);
+    return Texture.newFromBytes(bytes).ifThrown(null);
   }
 
   /**
