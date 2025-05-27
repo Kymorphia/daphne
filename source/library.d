@@ -7,20 +7,22 @@ public import library_song;
 
 import std.algorithm : canFind, map;
 import std.array : assocArray, insertInPlace;
+import std.conv : to;
 import std.file : DirEntry, dirEntries, SpanMode;
 import std.logger;
 import std.path : baseName, buildPath;
 import std.parallelism : Task, task;
 import std.range : assumeSorted, repeat;
-import std.signals;
 import std.string : icmp, join;
 import std.typecons : tuple;
 import std.variant : Variant;
 
-import ddbc : createConnection, Connection, PreparedStatement;
+import ddbc : createConnection, Connection, PreparedStatement, Statement;
 import gettext;
 
 import daphne;
+import prop_iface;
+import signal;
 
 enum LibraryDatabaseFile = "daphne-library.db"; /// Library file name
 
@@ -46,25 +48,42 @@ class Library
     try
       _dbConn = createConnection("sqlite:" ~ buildPath(_daphne.appDir, LibraryDatabaseFile));
     catch (Exception e)
-      throw new Exception("DB connect error", e);
+      throw new Exception("DB connect error: " ~ e.msg);
 
-    auto stmt = _dbConn.createStatement;
-    scope(exit) stmt.close;
+    _dbStmt = _dbConn.createStatement; // Just re-use statement.
 
     try
-      stmt.executeUpdate("CREATE TABLE IF NOT EXISTS Library (" ~ LibrarySong.SqlSchema ~ ")");
+      _dbStmt.executeUpdate("CREATE TABLE IF NOT EXISTS Library (" ~ LibrarySong.SqlSchema ~ ")");
     catch (Exception e)
-      throw new Exception("DB table create error", e);
+      throw new Exception("DB table create error: " ~ e.msg);
     
     try // Load the Library table into library objects
     {
-      auto rs = stmt.executeQuery("SELECT " ~ LibrarySong.SqlColumns.join(", ") ~ ", id FROM Library"); // Add "id" field to end
+      auto rs = _dbStmt.executeQuery("SELECT " ~ LibrarySong.SqlColumns.join(", ") ~ ", id FROM Library"); // Add "id" field to end
 
       while (rs.next)
         addSong(new LibrarySong(rs));
     }
     catch (Exception e)
       throw new Exception("Library DB load error: " ~ e.msg);
+
+    _propChangedGlobalHook = propChangedGlobal.connect(&onGlobalPropChanged); // Add global property change signal hook
+  }
+
+  // Called when any PropIface property changes
+  private void onGlobalPropChanged(PropIface propObj, string propName, Variant val, Variant oldVal)
+  {
+    if (auto song = cast(LibrarySong)propObj)
+    {
+      if (propName != "libAlbum")
+      {
+        try
+          _dbStmt.executeUpdate("UPDATE Library SET " ~ propName ~ "=" ~ val.coerce!string ~ " WHERE id="
+            ~ song.id.to!string);
+        catch (Exception e)
+          throw new Exception("Library DB update error: " ~ e.msg);
+      }
+    }
   }
 
   /// Close library
@@ -72,8 +91,11 @@ class Library
   {
     if (_dbConn)
     {
+      _dbStmt.close;
       _dbConn.close;
       _dbConn = null;
+
+      propChangedGlobal.disconnect(_propChangedGlobalHook);
     }
   }
 
@@ -81,7 +103,6 @@ class Library
   private struct IndexerData
   {
     Library library; // The library instance
-    Connection _dbConn; // Database connection
     string[] mediaPaths; // Duplicated media paths from Prefs
     string[] extensions; // Duplicated file extensions
     bool[string] existingFiles; // Hash of existing song files
@@ -107,7 +128,6 @@ class Library
 
     IndexerData data;
     data.library = this;
-    data._dbConn = _dbConn;
     data.mediaPaths = _daphne.prefs.mediaPaths.dup;
     data.extensions = _extFilter.dup;
     data.existingFiles = songFiles.keys.map!(k => tuple(k, true)).assocArray;
@@ -133,40 +153,17 @@ class Library
 
     synchronized data.library._indexerTotalFiles = cast(int)newFiles.length;
 
-    PreparedStatement ps;
-
-    try
-    {
-      ps = data._dbConn.prepareStatement("INSERT INTO Library (" ~ LibrarySong.SqlColumns.join(", ")
-        ~ ") VALUES (" ~ "?".repeat(LibrarySong.SqlColumns.length).join(", ") ~ ")");
-    }
-    catch (Exception e)
-    {
-      error("Library insert prepare error: " ~ e.msg);
-      return;
-    }
-
-    scope(exit) ps.close;
-
     foreach (i; 0 .. newFiles.length) // Loop on new files, get tags, and add songs to the database and new songs array if valid
     {
-      if (auto song = LibrarySong.createFromTagFile(newFiles[i]))
+      auto song = LibrarySong.createFromTagFile(newFiles[i]);
+
+      synchronized
       {
-        song.storeSqlValues(ps);
+        if (song)
+          data.library._indexerNewSongs ~= song;
 
-        try
-        {
-          Variant outIdVal;
-          ps.executeUpdate(outIdVal);
-          song.id = outIdVal.coerce!long;
-        }
-        catch (Exception e)
-          warning("Library insert error: " ~ e.msg);
-
-        synchronized data.library._indexerNewSongs ~= song;
+        data.library._indexerCompletedFiles = cast(int)(i + 1); // Update progress
       }
-
-      synchronized data.library._indexerCompletedFiles = cast(int)(i + 1); // Update progress
     }
   }
 
@@ -192,7 +189,7 @@ class Library
     }
 
     foreach (song; newSongs)
-      addSong(song);
+      addNewSong(song);
 
     if (completed == total)
     {
@@ -212,6 +209,31 @@ class Library
   bool isIndexerRunning()
   {
     return _indexerTask != null;
+  }
+
+  /**
+   * Add a new song object to the library and inserts into the database file.
+   * Params:
+   *   song = The song to add
+   */
+  void addNewSong(LibrarySong song)
+  {
+    auto ps = _dbConn.prepareStatement("INSERT INTO Library (" ~ LibrarySong.SqlColumns.join(", ")
+      ~ ") VALUES (" ~ "?".repeat(LibrarySong.SqlColumns.length).join(", ") ~ ")");
+    scope(exit) ps.close;
+
+    song.storeSqlValues(ps);
+
+    try
+    {
+      Variant outIdVal;
+      ps.executeUpdate(outIdVal);
+      song.id = outIdVal.coerce!long;
+    }
+    catch (Exception e)
+      warning("Library insert error: " ~ e.msg);
+
+    addSong(song);
   }
 
   /**
@@ -280,7 +302,9 @@ class Library
 private:
   Daphne _daphne; // Daphne app object
   Connection _dbConn; // Library database connection
+  Statement _dbStmt; // Database statement (re-used for optimization)
   string[] _extFilter; // File extension filter
+  propChangedGlobal.SignalHook* _propChangedGlobalHook; // Hook for global property change signal
 
   Task!(indexerThread, IndexerData)* _indexerTask; // mediaPaths, extensions, existingFiles
 

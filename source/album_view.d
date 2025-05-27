@@ -3,7 +3,6 @@ module album_view;
 import std.algorithm : canFind, endsWith, map, sort, startsWith;
 import std.array : array;
 import std.conv : to;
-import std.signals;
 import std.string : cmp, toLower;
 
 import gettext;
@@ -36,6 +35,7 @@ import gtk.types : FilterChange, Orientation;
 
 import daphne;
 import library;
+import signal;
 
 /// Album view widget
 class AlbumView : Box
@@ -230,7 +230,6 @@ class AlbumView : Box
   {
     _filterArtists = artists;
     _searchFilter.changed(FilterChange.Different);
-    // _selModel.selectionChanged(0, )
   }
 
   /**

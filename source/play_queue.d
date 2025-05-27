@@ -1,54 +1,41 @@
 module play_queue;
 
-import std.algorithm : canFind, cmp, endsWith, map, sort, startsWith;
+import std.algorithm : canFind, endsWith, map, startsWith;
 import std.array : array, insertInPlace;
 import std.conv : to;
-import std.format : format;
 import std.logger;
 import std.path : buildPath;
 import std.random : randomShuffle;
 import std.range : retro;
-import std.signals;
 import std.string : join, toLower;
 
-import ddbc : createConnection, Connection, PreparedStatement;
-import gettext;
-import gio.list_model;
+import ddbc : createConnection, Connection;
 import gio.list_store;
-import glib.global : timeoutAdd;
-import glib.source;
-import glib.types : PRIORITY_DEFAULT, SOURCE_REMOVE;
-import glib.variant;
+import glib.variant : GLibVariant = Variant;
 import gobject.object;
-import gobject.types : GTypeEnum;
-import gobject.value;
 import gtk.bitset;
 import gtk.bitset_iter;
 import gtk.box;
 import gtk.button;
 import gtk.callback_action;
-import gtk.column_view;
-import gtk.column_view_column;
 import gtk.custom_filter;
 import gtk.custom_sorter;
 import gtk.filter_list_model;
-import gtk.label;
-import gtk.list_item;
 import gtk.multi_selection;
 import gtk.scrolled_window;
 import gtk.search_entry;
-import gtk.selection_model;
 import gtk.shortcut;
 import gtk.shortcut_controller;
 import gtk.shortcut_trigger;
-import gtk.signal_list_item_factory;
 import gtk.sort_list_model;
-import gtk.text;
 import gtk.types : FilterChange, Orientation, ShortcutScope;
 import gtk.widget;
 
 import daphne;
 import library;
+import prop_iface;
+import rating;
+import song_column_view;
 import utils : executeSql;
 
 enum PlayQueueDatabaseFile = "daphne-queue.db"; /// Play queue database filename
@@ -81,62 +68,15 @@ class PlayQueue : Box
     _scrolledWindow.setHexpand(true);
     append(_scrolledWindow);
 
-    _listModel = new ListStore(GTypeEnum.Object);
+    _songColumnView = new SongColumnView;
+    _scrolledWindow.setChild(_songColumnView);
+
+    _selModel = cast(MultiSelection)_songColumnView.model;
+    _listModel = cast(ListStore)_selModel.model;
 
     _searchFilter = new CustomFilter(&searchFilterFunc);
     auto filterListModel = new FilterListModel(_listModel, _searchFilter); // Used to filter on search text
-    _selModel = new MultiSelection(filterListModel);
-    _columnView = new ColumnView(_selModel);
-    _columnView.addCssClass("data-table");
-    _scrolledWindow.setChild(_columnView);
-
-    auto factory = new SignalListItemFactory();
-    factory.connectSetup(&onTrackSetup);
-    factory.connectBind(&onTrackBind);
-    auto col = new ColumnViewColumn(tr!"Track", factory);
-    _columnView.appendColumn(col);
-    col.expand = false;
-    col.resizable = true;
-
-    factory = new SignalListItemFactory();
-    factory.connectSetup(&onTitleSetup);
-    factory.connectBind(&onTitleBind);
-    col = new ColumnViewColumn(tr!"Title", factory);
-    _columnView.appendColumn(col);
-    col.expand = true;
-    col.resizable = true;
-
-    factory = new SignalListItemFactory();
-    factory.connectSetup(&onArtistSetup);
-    factory.connectBind(&onArtistBind);
-    col = new ColumnViewColumn(tr!"Artist", factory);
-    _columnView.appendColumn(col);
-    col.expand = true;
-    col.resizable = true;
-
-    factory = new SignalListItemFactory();
-    factory.connectSetup(&onAlbumSetup);
-    factory.connectBind(&onAlbumBind);
-    col = new ColumnViewColumn(tr!"Album", factory);
-    _columnView.appendColumn(col);
-    col.expand = true;
-    col.resizable = true;
-
-    factory = new SignalListItemFactory();
-    factory.connectSetup(&onLengthSetup);
-    factory.connectBind(&onLengthBind);
-    col = new ColumnViewColumn(tr!"Length", factory);
-    _columnView.appendColumn(col);
-    col.expand = false;
-    col.resizable = true;
-
-    factory = new SignalListItemFactory();
-    factory.connectSetup(&onYearSetup);
-    factory.connectBind(&onYearBind);
-    col = new ColumnViewColumn(tr!"Year", factory);
-    _columnView.appendColumn(col);
-    col.expand = false;
-    col.resizable = true;
+    _selModel.model = filterListModel;
 
     auto shortCtrl = new ShortcutController;
     shortCtrl.setScope(ShortcutScope.Local);
@@ -146,7 +86,7 @@ class PlayQueue : Box
       new CallbackAction(&onDeleteKeyCallback)));
   }
 
-  private bool onDeleteKeyCallback(Widget widg, Variant args)
+  private bool onDeleteKeyCallback(Widget widg, GLibVariant args)
   {
     uint[2][] ranges;
     BitsetIter iter;
@@ -181,7 +121,7 @@ class PlayQueue : Box
 
     // Construct new list by appending the ranges of items not being removed
     uint lastPos = 0;
-    QueueSong[] newSongs;
+    SongColumnViewItem[] newSongs;
     foreach (r; ranges)
     {
       newSongs ~= _songs[lastPos .. r[0]];
@@ -233,7 +173,7 @@ class PlayQueue : Box
     {
       _dbConn.executeSql("DELETE FROM Queue");
       _dbConn.executeSql("INSERT INTO Queue (id, song_id) VALUES "
-        ~ _songs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.libSong.id.to!string ~ ")").join(", "));
+        ~ _songs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.song.id.to!string ~ ")").join(", "));
     }
     catch (Exception e)
       error("Queue DB shuffle error: " ~ e.msg);
@@ -241,94 +181,7 @@ class PlayQueue : Box
 
   private bool searchFilterFunc(ObjectWrap item)
   {
-    return (_searchString.length == 0 || (cast(QueueSong)item).libSong.name.toLower.canFind(_searchString)); // No search or search matches?
-  }
-
-  private void onTrackSetup(ListItem listItem)
-  {
-    listItem.setChild(new Label);
-  }
-
-  private void onTrackBind(ListItem listItem)
-  {
-    auto track = (cast(QueueSong)listItem.getItem).libSong.track;
-    (cast(Label)listItem.getChild).setText(track > 0 ? track.to!string : null);
-  }
-
-  private void onTitleSetup(ListItem listItem)
-  {
-    auto text = new Text;
-    text.hexpand = true;
-    listItem.setChild(text);
-  }
-
-  private void onTitleBind(ListItem listItem)
-  {
-    auto song = (cast(QueueSong)listItem.getItem).libSong;
-    auto text = cast(Text)listItem.getChild;
-    text.getBuffer.setText(song.title.length > 0 ? song.title : tr!UnknownName, -1);
-    text.setEditable(false);
-    text.setCanFocus(false);
-    text.setCanTarget(false);
-    text.setFocusOnClick(false);
-  }
-
-  private void onArtistSetup(ListItem listItem)
-  {
-    auto text = new Text;
-    text.hexpand = true;
-    listItem.setChild(text);
-  }
-
-  private void onArtistBind(ListItem listItem)
-  {
-    auto song = (cast(QueueSong)listItem.getItem).libSong;
-    auto text = cast(Text)listItem.getChild;
-    text.getBuffer.setText(song.artist.length > 0 ? song.artist : tr!UnknownName, -1);
-    text.setEditable(false);
-    text.setCanFocus(false);
-    text.setCanTarget(false);
-    text.setFocusOnClick(false);
-  }
-
-  private void onAlbumSetup(ListItem listItem)
-  {
-    auto text = new Text;
-    text.hexpand = true;
-    listItem.setChild(text);
-  }
-
-  private void onAlbumBind(ListItem listItem)
-  {
-    auto song = (cast(QueueSong)listItem.getItem).libSong;
-    auto text = cast(Text)listItem.getChild;
-    text.getBuffer.setText(song.album.length > 0 ? song.album : tr!UnknownName, -1);
-    text.setEditable(false);
-    text.setCanFocus(false);
-    text.setCanTarget(false);
-    text.setFocusOnClick(false);
-  }
-
-  private void onLengthSetup(ListItem listItem)
-  {
-    listItem.setChild(new Label);
-  }
-
-  private void onLengthBind(ListItem listItem)
-  {
-    auto length = (cast(QueueSong)listItem.getItem).libSong.length;
-    (cast(Label)listItem.getChild).setText(length > 0 ? format("%u:%02u", length / 60, length % 60) : null);
-  }
-
-  private void onYearSetup(ListItem listItem)
-  {
-    listItem.setChild(new Label);
-  }
-
-  private void onYearBind(ListItem listItem)
-  {
-    auto year = (cast(QueueSong)listItem.getItem).libSong.year;
-    (cast(Label)listItem.getChild).setText(year > 0 ? year.to!string : null);
+    return (_searchString.length == 0 || (cast(SongColumnViewItem)item).song.name.toLower.canFind(_searchString)); // No search or search matches?
   }
 
   /**
@@ -361,7 +214,8 @@ class PlayQueue : Box
         if (auto song = _daphne.library.songIds.get(rs.getLong(2), null))
         {
           auto id = rs.getLong(2);
-          _songs ~= new QueueSong(rs.getLong(1), song);
+          _songs ~= new SongColumnViewItem(song);
+          _songs[$ - 1].queueId = rs.getLong(1);
 
           if (id >= _nextQueueId)
             _nextQueueId = id + 1;
@@ -393,8 +247,8 @@ class PlayQueue : Box
     if (_songs.length > 0)
     {
       isPlaying = true;
-      currentSong.emit(_songs[0].libSong);
-      return _songs[0].libSong;
+      currentSong.emit(_songs[0].song);
+      return _songs[0].song;
     }
     else
       return null;
@@ -435,17 +289,20 @@ class PlayQueue : Box
     if (pos < 0 || pos > _songs.length) // Append if negative pos or pos off the end
       pos = cast(int)_songs.length;
 
-    QueueSong[] qSongs;
+    SongColumnViewItem[] qSongs;
 
     foreach (song; songs)
-      qSongs ~= new QueueSong(_nextQueueId++, song);
+    {
+      qSongs ~= new SongColumnViewItem(song);
+      qSongs[$ - 1].queueId = _nextQueueId++;
+    }
 
     _listModel.splice(pos, 0, cast(ObjectWrap[])qSongs);
     _songs.insertInPlace(pos, qSongs);
 
     try
       _dbConn.executeSql("INSERT INTO Queue (id, song_id) VALUES "
-        ~ qSongs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.libSong.id.to!string ~ ")").join(", "));
+        ~ qSongs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.song.id.to!string ~ ")").join(", "));
     catch (Exception e)
       error("Queue DB insert error: " ~ e.msg);
   }
@@ -485,7 +342,7 @@ class PlayQueue : Box
 
     if (pos == 0) // If the current song was removed, update it
     {
-      currentSong.emit(_songs.length > 0 ? _songs[0].libSong : null);
+      currentSong.emit(_songs.length > 0 ? _songs[0].song : null);
 
       if (_songs.length == 0)
         _nextQueueId = 1; // Reset next queue ID when empty
@@ -497,7 +354,7 @@ class PlayQueue : Box
 private:
   Daphne _daphne;
   Connection _dbConn;
-  QueueSong[] _songs;
+  SongColumnViewItem[] _songs;
   long _nextQueueId = 1;
   SearchEntry _searchEntry;
   ulong _searchChangedHandler;
@@ -506,27 +363,6 @@ private:
   MultiSelection _selModel;
   ListStore _listModel;
   CustomFilter _searchFilter;
-  ColumnView _columnView;
+  SongColumnView _songColumnView;
   bool isPlaying;
-}
-
-/// Song entry in the queue
-class QueueSong : ObjectWrap
-{
-  this()
-  {
-    super(GTypeEnum.Object);
-  }
-
-  this(long id, LibrarySong song)
-  {
-    super(GTypeEnum.Object);
-    queueId = id;
-    libSong = song;
-  }
-
-  mixin(objectMixin);
-
-  long queueId; // Queue table row ID
-  LibrarySong libSong; // The song for this queue entry
 }

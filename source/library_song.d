@@ -10,28 +10,35 @@ import taglib;
 
 import library_album;
 import library_item;
+import prop_iface;
 
 /// A song structure for POD loading from DB
-class LibrarySong : LibraryItem
+class LibrarySong : LibraryItem, PropIface
 {
   enum MinYear = 1000; // Gregorian chants encoded on stone tablets
   enum MaxYear = 3000; // Time traveling tunes
-  enum MaxTrack = 1000; // That's probably enough tracks per disk
-  enum MaxDisc = 1000; // 1000 disc box set
-  enum MaxLength = 100 * 3600; // 100 hour song length should be good
+  enum MaxTrack = 999; // That's probably enough tracks per disk
+  enum MaxDisc = 999; // 1000 disc box set
+  enum MaxLength = 99 * 3600; // 99 hour song length should be good
+  enum MaxRating = 11; // Because 11 is better than 10
 
-  long id;
-  string filename;
-  string title;
-  string artist;
-  string album;
-  string genre;
-  uint year;
-  uint track;
-  uint disc;
-  uint length;
-  ubyte rating;
-  LibraryAlbum libAlbum;
+  struct PropDef
+  {
+    @Desc("Table ID") long id;
+    @Desc("Filename") string filename;
+    @Desc("Title") string title;
+    @Desc("Artist") string artist;
+    @Desc("Album") string album;
+    @Desc("Genre") string genre;
+    @Desc("Year") uint year;
+    @Desc("Track") uint track;
+    @Desc("Disc") uint disc;
+    @Desc("Length in seconds") uint length;
+    @Desc("Rating") @RangeValue("0", "MaxRating") ubyte rating;
+    @Desc("Album object") LibraryAlbum libAlbum;
+  }
+
+  mixin(definePropIface!(PropDef, true));
 
   this()
   {
@@ -44,17 +51,17 @@ class LibrarySong : LibraryItem
    */
   this(ResultSet rs)
   {
-    filename = rs.getString(1);
-    title = rs.getString(2);
-    artist = rs.getString(3);
-    album = rs.getString(4);
-    genre = rs.getString(5);
-    year = rs.getUint(6);
-    track = rs.getUint(7);
-    disc = rs.getUint(8);
-    length = rs.getUint(9);
-    rating = rs.getUbyte(10);
-    id = rs.getLong(11);
+    _props.filename = rs.getString(1);
+    _props.title = rs.getString(2);
+    _props.artist = rs.getString(3);
+    _props.album = rs.getString(4);
+    _props.genre = rs.getString(5);
+    _props.year = rs.getUint(6);
+    _props.track = rs.getUint(7);
+    _props.disc = rs.getUint(8);
+    _props.length = rs.getUint(9);
+    _props.rating = rs.getUbyte(10);
+    _props.id = rs.getLong(11);
 
     validate;
   }
@@ -74,17 +81,17 @@ class LibrarySong : LibraryItem
       return null;
 
     auto song = new LibrarySong;
-    song.filename = filename;
-    song.title = tagFile.title;
-    song.artist = tagFile.artist;
-    song.album = tagFile.album;
-    song.genre = tagFile.genre;
-    song.year = tagFile.year;
-    song.track = tagFile.track;
-    song.length = tagFile.length;
+    song._props.filename = filename;
+    song._props.title = tagFile.title;
+    song._props.artist = tagFile.artist;
+    song._props.album = tagFile.album;
+    song._props.genre = tagFile.genre;
+    song._props.year = tagFile.year;
+    song._props.track = tagFile.track;
+    song._props.length = tagFile.length;
 
     auto discNumberVals = tagFile.getProp("DISCNUMBER");
-    song.disc = discNumberVals.length > 0 ? discNumberVals[0].to!uint.ifThrown(0) : 0;
+    song._props.disc = discNumberVals.length > 0 ? discNumberVals[0].to!uint.ifThrown(0) : 0;
 
     song.validate;
     return song;
@@ -98,7 +105,7 @@ class LibrarySong : LibraryItem
     */
   Texture getPicture()
   {
-    auto tagFile = new TagFile(filename);
+    auto tagFile = new TagFile(_props.filename);
     if (!tagFile.isValid)
       return null;
 
@@ -115,16 +122,16 @@ class LibrarySong : LibraryItem
    */
   void validate()
   {
-    if (year > 0 && (year < MinYear || year > MaxYear))
+    if (_props.year > 0 && (_props.year < MinYear || _props.year > MaxYear))
       year = 0;
 
-    if (track > 0 && track > MaxTrack)
+    if (_props.track > 0 && _props.track > MaxTrack)
       track = 0;
 
-    if (disc > 0 && disc > MaxDisc)
+    if (_props.disc > 0 && _props.disc > MaxDisc)
       disc = 0;
 
-    if (length > 0 && length > MaxLength)
+    if (_props.length > 0 && _props.length > MaxLength)
       length = 0;
   }
 
@@ -133,16 +140,16 @@ class LibrarySong : LibraryItem
    */
   void storeSqlValues(PreparedStatement ps)
   {
-    ps.setString(1, filename);
-    ps.setString(2, title);
-    ps.setString(3, artist);
-    ps.setString(4, album);
-    ps.setString(5, genre);
-    ps.setUint(6, year);
-    ps.setUint(7, track);
-    ps.setUint(8, disc);
-    ps.setUint(9, length);
-    ps.setUbyte(10, rating);
+    ps.setString(1, _props.filename);
+    ps.setString(2, _props.title);
+    ps.setString(3, _props.artist);
+    ps.setString(4, _props.album);
+    ps.setString(5, _props.genre);
+    ps.setUint(6, _props.year);
+    ps.setUint(7, _props.track);
+    ps.setUint(8, _props.disc);
+    ps.setUint(9, _props.length);
+    ps.setUbyte(10, _props.rating);
   }
 
   // Get SQL column names for inserts/updates, does not include id column

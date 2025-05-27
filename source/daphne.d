@@ -7,7 +7,6 @@ import std.file : exists, mkdirRecurse;
 import std.format : format;
 import std.logger;
 import std.path : buildPath;
-import std.signals;
 import std.stdio : writeln;
 import std.string : toStringz;
 
@@ -45,6 +44,7 @@ import album_view;
 import player;
 import play_queue;
 import prefs;
+import signal;
 import song_display;
 import song_view;
 
@@ -239,14 +239,34 @@ MIT license`;
       return;
     }
 
-    // std.signals doesn't handle lambdas/local functions which would be a lot cleaner here
-    artistView.selectionChanged.connect(&onArtistViewSelectionChanged);
-    albumView.selectionChanged.connect(&onAlbumViewSelectionChanged);
-    songView.queueSongs.connect(&onSongViewQueueSongs);
-    playQueue.currentSong.connect(&onPlayQueueCurrentSong);
-    library.newArtist.connect(&onNewArtist);
-    library.newAlbum.connect(&onNewAlbum);
-    library.newSong.connect(&onNewSong);
+    artistView.selectionChanged.connect((LibraryArtist[] selectedArtists) {
+      albumView.setArtists(selectedArtists);
+      songView.setArtists(selectedArtists);
+    });
+
+    albumView.selectionChanged.connect((LibraryAlbum[] selectedAlbums) {
+      songView.setAlbums(selectedAlbums);
+    });
+
+    songView.queueSongs.connect((LibrarySong[] songs) {
+      playQueue.add(songs);
+    });
+
+    playQueue.currentSong.connect((LibrarySong song) {
+      songDisplay.song = song;
+    });
+
+    library.newArtist.connect((LibraryArtist artist) {
+      artistView.addArtist(artist);
+    });
+
+    library.newAlbum.connect((LibraryAlbum album) {
+      albumView.addAlbum(album);
+    });
+
+    library.newSong.connect((LibrarySong song) {
+      songView.addSong(song);
+    });
 
 		mainWindow.present;
 
@@ -293,42 +313,6 @@ MIT license`;
     }
 
     return SOURCE_CONTINUE;
-  }
-
-  private void onArtistViewSelectionChanged(LibraryArtist[] selectedArtists)
-  {
-    albumView.setArtists(selectedArtists);
-    songView.setArtists(selectedArtists);
-  }
-
-  private void onAlbumViewSelectionChanged(LibraryAlbum[] selectedAlbums)
-  {
-    songView.setAlbums(selectedAlbums);
-  }
-
-  private void onSongViewQueueSongs(LibrarySong[] songs)
-  {
-    playQueue.add(songs);
-  }
-
-  private void onPlayQueueCurrentSong(LibrarySong song)
-  {
-    songDisplay.song = song;
-  }
-
-  private void onNewArtist(LibraryArtist artist)
-  {
-    artistView.addArtist(artist);
-  }
-
-  private void onNewAlbum(LibraryAlbum album)
-  {
-    albumView.addAlbum(album);
-  }
-
-  private void onNewSong(LibrarySong song)
-  {
-    songView.addSong(song);
   }
 
   private PopoverMenuBar createMenuBar()

@@ -17,6 +17,7 @@ import gtk.types : Orientation;
 
 import daphne;
 import library;
+import utils : formatSongTime;
 
 /// Player widget
 class Player : Box
@@ -125,9 +126,9 @@ class Player : Box
       signalHandlerUnblock(_songPosScale, _songPosScaleHandler);
 
       auto currentPosSecsInt = cast(uint)(currentPosSecs + 0.5);
-      _timePlayedLabel.label = formatSongTime(currentPosSecsInt);
+      _timePlayedLabel.label = formatSongTime(currentPosSecsInt, _durationSecs);
       _timeRemainingLabel.label = formatSongTime(currentPosSecsInt <= _durationSecs
-        ? _durationSecs - currentPosSecsInt : 0);
+        ? _durationSecs - currentPosSecsInt : 0, _durationSecs);
     }
 
     return SOURCE_CONTINUE;
@@ -157,33 +158,12 @@ class Player : Box
     _durationCalculated = false;
     _durationSecs = _song.length; // Gets updated later to be the real time calculated by GStreamer
     _songPosScale.setRange(0, _durationSecs);
-    _timePlayedLabel.label = formatSongTime(0);
+    _timePlayedLabel.label = formatSongTime(0, _durationSecs);
     _timeRemainingLabel.label = formatSongTime(_durationSecs);
 
     _playbin.setState(State.Playing);
     _playPauseBtn.setIconName("media-playback-pause");
     _state = State.Playing;
-  }
-
-  /**
-   * Format time using the number of digits required to represent the total song time.
-   * Params:
-   *   timeSecs = The time in seconds
-   * Returns: String of the form HH:MM:SS where left most quantity only uses as many digits as required and others are 0 padded, total digits used based on the song length
-   */
-  private string formatSongTime(uint timeSecs)
-  {
-    auto maxval = timeSecs;
-
-    if (_durationSecs > maxval)
-      maxval = _durationSecs;
-
-    if (maxval < 10 * 60)
-      return format("%u:%02u", timeSecs / 60, timeSecs % 60);
-    else if (maxval < 100 * 60)
-      return format("%02u:%02u", timeSecs / 60, timeSecs % 60);
-    else
-      return format("%u:%02u:%02u", timeSecs / 3600, (timeSecs % 3600) / 60, timeSecs % 60);
   }
 
   void pause()
