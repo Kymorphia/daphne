@@ -53,13 +53,13 @@ class Library
     _dbStmt = _dbConn.createStatement; // Just re-use statement.
 
     try
-      _dbStmt.executeUpdate("CREATE TABLE IF NOT EXISTS Library (" ~ LibrarySong.SqlSchema ~ ")");
+      _dbStmt.executeUpdate("CREATE TABLE IF NOT EXISTS songs (" ~ LibrarySong.SqlSchema ~ ")");
     catch (Exception e)
       throw new Exception("DB table create error: " ~ e.msg);
     
     try // Load the Library table into library objects
     {
-      auto rs = _dbStmt.executeQuery("SELECT " ~ LibrarySong.SqlColumns.join(", ") ~ ", id FROM Library"); // Add "id" field to end
+      auto rs = _dbStmt.executeQuery("SELECT " ~ LibrarySong.SqlColumns.join(", ") ~ ", id FROM songs"); // Add "id" field to end
 
       while (rs.next)
         addSong(new LibrarySong(rs));
@@ -78,7 +78,7 @@ class Library
       if (propName != "libAlbum")
       {
         try
-          _dbStmt.executeUpdate("UPDATE Library SET " ~ propName ~ "=" ~ val.coerce!string ~ " WHERE id="
+          _dbStmt.executeUpdate("UPDATE songs SET " ~ propName ~ "=" ~ val.coerce!string ~ " WHERE id="
             ~ song.id.to!string);
         catch (Exception e)
           throw new Exception("Library DB update error: " ~ e.msg);
@@ -218,7 +218,7 @@ class Library
    */
   void addNewSong(LibrarySong song)
   {
-    auto ps = _dbConn.prepareStatement("INSERT INTO Library (" ~ LibrarySong.SqlColumns.join(", ")
+    auto ps = _dbConn.prepareStatement("INSERT INTO songs (" ~ LibrarySong.SqlColumns.join(", ")
       ~ ") VALUES (" ~ "?".repeat(LibrarySong.SqlColumns.length).join(", ") ~ ")");
     scope(exit) ps.close;
 

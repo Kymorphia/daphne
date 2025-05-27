@@ -131,7 +131,7 @@ class PlayQueue : Box
     _songs = newSongs ~ _songs[lastPos .. $];
 
     try
-      _dbConn.executeSql("DELETE FROM Queue WHERE id IN (" ~ qIds.map!(x => x.to!string).join(", ") ~ ")");
+      _dbConn.executeSql("DELETE FROM queue WHERE id IN (" ~ qIds.map!(x => x.to!string).join(", ") ~ ")");
     catch (Exception e)
       error("Queue DB delete error: " ~ e.msg);
 
@@ -171,8 +171,8 @@ class PlayQueue : Box
 
     try
     {
-      _dbConn.executeSql("DELETE FROM Queue");
-      _dbConn.executeSql("INSERT INTO Queue (id, song_id) VALUES "
+      _dbConn.executeSql("DELETE FROM queue");
+      _dbConn.executeSql("INSERT INTO queue (id, song_id) VALUES "
         ~ _songs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.song.id.to!string ~ ")").join(", "));
     }
     catch (Exception e)
@@ -199,15 +199,15 @@ class PlayQueue : Box
 
     try
     {
-      stmt.executeUpdate("CREATE TABLE IF NOT EXISTS Queue (id INTEGER PRIMARY KEY, song_id int)");
-      stmt.executeUpdate("CREATE TABLE IF NOT EXISTS History (id INTEGER PRIMARY KEY, song_id int, timestamp int)");
+      stmt.executeUpdate("CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY, song_id int)");
+      stmt.executeUpdate("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY, song_id int, timestamp int)");
     }
     catch (Exception e)
       throw new Exception("Queue DB table create error: " ~ e.msg);
 
     try // Load the Queue table
     {
-      auto rs = stmt.executeQuery("SELECT id, song_id FROM Queue ORDER BY id");
+      auto rs = stmt.executeQuery("SELECT id, song_id FROM queue ORDER BY id");
 
       while (rs.next)
       {
@@ -301,7 +301,7 @@ class PlayQueue : Box
     _songs.insertInPlace(pos, qSongs);
 
     try
-      _dbConn.executeSql("INSERT INTO Queue (id, song_id) VALUES "
+      _dbConn.executeSql("INSERT INTO queue (id, song_id) VALUES "
         ~ qSongs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.song.id.to!string ~ ")").join(", "));
     catch (Exception e)
       error("Queue DB insert error: " ~ e.msg);
@@ -335,7 +335,7 @@ class PlayQueue : Box
       return;
 
     auto qSong = _songs[pos];
-    _dbConn.executeSql("DELETE FROM Queue WHERE id=" ~ qSong.queueId.to!string);
+    _dbConn.executeSql("DELETE FROM queue WHERE id=" ~ qSong.queueId.to!string);
 
     _listModel.remove(pos);
     _songs = _songs[0 .. pos] ~ _songs[pos + 1 .. $];
