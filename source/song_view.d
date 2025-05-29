@@ -71,6 +71,15 @@ class SongView : Box
     selModel.model = _sortModel;
 
     _artistAlbumTrackSorter = new CustomSorter(&artistAlbumTrackSorter);
+
+    _songColumnView.selectionChanged.connect((LibrarySong[] selection) {
+      selectionChanged.emit(selection);
+    });
+  }
+
+  @property LibrarySong[] selection()
+  {
+    return _songColumnView.selection;
   }
 
   private void onAddSongsButtonClicked() // Callback for when queue songs button is clicked
@@ -181,8 +190,6 @@ class SongView : Box
 
   mixin Signal!(LibrarySong[]) selectionChanged; /// Selected songs changed signal
   mixin Signal!(LibrarySong[]) queueSongs; /// Queue songs action callback
-
-  LibrarySong[] selection;
 
 private:
   Daphne _daphne;
