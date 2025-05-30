@@ -146,7 +146,7 @@ class Mpris
       string[] invalidated;
       auto params = new Variant(PlayerInterface, props, invalidated); // sa{sv}as
 
-      trace("MPRIS PropertiesChanged signal: " ~ props.keys.array.join(", "));
+      trace("MPRIS PropertiesChanged signal: " ~ props.to!string);
 
       try
         _conn.emitSignal(null, ObjectName, "org.freedesktop.DBus.Properties", "PropertiesChanged", params);
@@ -183,24 +183,26 @@ class Mpris
   private Variant rootGetProperty(DBusConnection conn, string sender, string objectPath, string interfaceName,
     string propertyName)
   {
-    trace("MPRIS root get property: " ~ objectPath ~ " " ~ interfaceName ~ " " ~ propertyName);
+    Variant ret;
 
     if (objectPath == ObjectName && interfaceName == RootInterface)
     {
       switch (propertyName)
       {
-        case "CanQuit": return new Variant(true);
-        case "CanRaise": return new Variant(true);
-        case "HasTrackList": return new Variant(false);
-        case "Identity": return new Variant("Daphne");
-        case "DesktopEntry": return null;
-        case "SupportedUriSchemes": return new Variant(["file"]);
-        case "SupportedMimeTypes": return new Variant(SupportedMimeTypes);
+        case "CanQuit": ret = new Variant(true); break;
+        case "CanRaise": ret = new Variant(true); break;
+        case "HasTrackList": ret = new Variant(false); break;
+        case "Identity": ret = new Variant("Daphne"); break;
+        case "DesktopEntry": break;
+        case "SupportedUriSchemes": ret = new Variant(["file"]); break;
+        case "SupportedMimeTypes": ret = new Variant(SupportedMimeTypes); break;
         default: break;
       }
     }
 
-    return null;
+    trace("MPRIS root get property: " ~ objectPath ~ " " ~ interfaceName ~ " " ~ propertyName ~ " " ~ ret.to!string);
+
+    return ret;
   }
 
   private void playerMethodCall(DBusConnection conn, string sender, string objectPath, string interfaceName,
@@ -252,32 +254,34 @@ class Mpris
   private Variant playerGetProperty(DBusConnection conn, string sender, string objectPath, string interfaceName,
     string propertyName)
   {
-    trace("MPRIS player get property: " ~ objectPath ~ " " ~ interfaceName ~ " " ~ propertyName);
+    Variant ret;
 
     if (objectPath == ObjectName && interfaceName == PlayerInterface)
     {
       switch (propertyName)
       {
-        case "PlaybackStatus": return new Variant(_daphne.player.playbackStatus);
-        case "LoopStatus": return new Variant("None");
-        case "Rate": return new Variant(1.0);
-        case "Shuffle": return new Variant(false);
-        case "Metadata": return getSongMetadata(_daphne.player.song);
-        case "Volume": return new Variant(_daphne.player.volume);
-        case "Position": return new Variant(_daphne.player.position); // Position in usecs
-        case "MinimumRate": return new Variant(1.0);
-        case "MaximumRate": return new Variant(1.0);
-        case "CanGoNext": return new Variant(_daphne.player.canGoNext);
-        case "CanGoPrevious": return new Variant(_daphne.player.canGoPrevious);
-        case "CanPlay": return new Variant(_daphne.player.canPlay);
-        case "CanPause": return new Variant(_daphne.player.canPause);
-        case "CanSeek": return new Variant(_daphne.player.canSeek);
-        case "CanControl": return new Variant(true); // Indicates that the other controls can be used
+        case "PlaybackStatus": ret = new Variant(_daphne.player.playbackStatus); break;
+        case "LoopStatus": ret = new Variant("None"); break;
+        case "Rate": ret = new Variant(1.0); break;
+        case "Shuffle": ret = new Variant(false); break;
+        case "Metadata": ret = getSongMetadata(_daphne.player.song); break;
+        case "Volume": ret = new Variant(_daphne.player.volume); break;
+        case "Position": ret = new Variant(_daphne.player.position); break; // Position in usecs
+        case "MinimumRate": ret = new Variant(1.0); break;
+        case "MaximumRate": ret = new Variant(1.0); break;
+        case "CanGoNext": ret = new Variant(_daphne.player.canGoNext); break;
+        case "CanGoPrevious": ret = new Variant(_daphne.player.canGoPrevious); break;
+        case "CanPlay": ret = new Variant(_daphne.player.canPlay); break;
+        case "CanPause": ret = new Variant(_daphne.player.canPause); break;
+        case "CanSeek": ret = new Variant(_daphne.player.canSeek); break;
+        case "CanControl": ret = new Variant(true); break; // Indicates that the other controls can be used
         default: break;
       }
     }
 
-    return null;
+    trace("MPRIS player get property: " ~ objectPath ~ " " ~ interfaceName ~ " " ~ propertyName ~ " " ~ ret.to!string);
+
+    return ret;
   }
 
   private bool playerSetProperty(DBusConnection conn, string sender, string objectPath, string interfaceName,

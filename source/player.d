@@ -100,6 +100,11 @@ final class Player : Box, PropIface
       setPosition(cast(long)(_songPosScale.getValue * 1_000_000));
     });
 
+    _daphne.playQueue.propChanged.connect((PropIface propObj, string propName, Variant val, Variant oldVal) {
+      if (propName == "songCount" && (val.get!uint == 0) != (oldVal.get!uint == 0)) // Only update state when changing queue song count from 0 to nonzero or nonzero to 0
+        updateState;
+    });
+
     timeoutAdd(PRIORITY_DEFAULT, RefreshRateMsecs, &refreshPosition);
 
     updateState;
@@ -182,7 +187,7 @@ final class Player : Box, PropIface
     playbackStatus = _state == State.Playing ? "Playing" : (_state == State.Paused ? "Paused" : "Stopped");
     canGoNext = _daphne.playQueue.songCount > 0;
     canGoPrevious = false; // TODO
-    canPlay = _state != State.Playing && _daphne.playQueue.songCount > 0;
+    canPlay = _daphne.playQueue.songCount > 0;
     canPause = _state == State.Playing;
     canSeek = (_state == State.Playing || _state == State.Paused) && _durationCalculated;
   }

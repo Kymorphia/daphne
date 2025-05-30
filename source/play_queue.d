@@ -41,7 +41,7 @@ import utils : executeSql;
 enum PlayQueueDatabaseFile = "daphne-queue.db"; /// Play queue database filename
 
 /// Play queue widget
-class PlayQueue : Box
+class PlayQueue : Box, PropIface
 {
   this(Daphne daphne)
   {
@@ -86,6 +86,13 @@ class PlayQueue : Box
       new CallbackAction(&onDeleteKeyCallback)));
   }
 
+  struct PropDef
+  {
+    @Desc("Count of songs in queue") uint songCount;
+  }
+
+  mixin(definePropIface!(PropDef, true));
+
   private bool onDeleteKeyCallback(Widget widg, GLibVariant args)
   {
     uint[2][] ranges;
@@ -129,6 +136,7 @@ class PlayQueue : Box
     }
 
     _songs = newSongs ~ _songs[lastPos .. $];
+    songCount = cast(uint)_songs.length;
 
     try
       _dbConn.executeSql("DELETE FROM queue WHERE id IN (" ~ qIds.map!(x => x.to!string).join(", ") ~ ")");
@@ -184,12 +192,6 @@ class PlayQueue : Box
     return (_searchString.length == 0 || (cast(SongColumnViewItem)item).song.name.toLower.canFind(_searchString)); // No search or search matches?
   }
 
-  /// Get count of songs in queue
-  @property uint songCount()
-  {
-    return cast(uint)_songs.length;
-  }
-
   /**
    * Open the queue file, load the data to the queue, or initialize it
    */
@@ -232,6 +234,7 @@ class PlayQueue : Box
       throw new Exception("Queue DB load error: " ~ e.msg);
 
     _listModel.splice(0, 0, cast(ObjectWrap[])_songs);
+    songCount = cast(uint)_songs.length;
   }
 
   /// Close queue database
@@ -311,6 +314,8 @@ class PlayQueue : Box
         ~ qSongs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.song.id.to!string ~ ")").join(", "));
     catch (Exception e)
       error("Queue DB insert error: " ~ e.msg);
+
+    songCount = cast(uint)_songs.length;
   }
 
   /**
@@ -353,6 +358,8 @@ class PlayQueue : Box
       if (_songs.length == 0)
         _nextQueueId = 1; // Reset next queue ID when empty
     }
+
+    songCount = cast(uint)_songs.length;
   }
 
   mixin Signal!(LibrarySong) currentSong;

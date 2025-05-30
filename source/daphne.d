@@ -84,9 +84,9 @@ class Daphne : Application
 
 	OptionEntry[] cmdLineOptions =
 		[
+      {"disable-mpris", 0, 0, OptionArg.None, null, null, null},
       {"log-level", 0, 0, OptionArg.String, null, null, null},
 			{"version", 'v', 0, OptionArg.None, null, null, null},
-			{null, 0, 0, OptionArg.None, null, null, null}, // Terminator
 	];
 
 	enum cmdLineSummary = tr!`Daphne ` ~ DaphneVersion ~ `
@@ -109,10 +109,13 @@ MIT license`;
     {
       foreach (i; 0 .. cmdLineOptions.length - 1)
       {
-        auto op = cmdLineOptions[i];
+        auto op = &cmdLineOptions[i];
 
         switch (to!string(op.longName))
         {
+          case "disable-mpris":
+            op.description = tr!"Disable MPRIS MediaPlayer2 D-Bus server".toStringz;
+            break;
           case "log-level":
             op.description = tr!("Log level (" ~ [EnumMembers!LogLevel].map!(x => x.to!string).join(", ") ~ ")").toStringz;
             break;
@@ -122,6 +125,8 @@ MIT license`;
           default:
             assert(0);
         }
+ 
+        writeln(op.description);
       }
 
       cmdLineOptionsInitialized = true;
@@ -299,7 +304,9 @@ MIT license`;
 		mainWindow.present;
 
     mpris = new Mpris(this);
-    mpris.connect;
+
+    if (!_disableMpris)
+      mpris.connect;
 
     timeoutAddSeconds(PRIORITY_DEFAULT, 1, &indexerProgressUpdate);
 
@@ -413,6 +420,8 @@ MIT license`;
 
     globalLogLevel(logLevel);
 
+    _disableMpris = getBoolOption("disable-mpris");
+
     return -1; // Activate application
   }
 
@@ -486,4 +495,5 @@ private:
   Label _statusLabel;
   Spinner _indexerSpinner;
   ProgressBar _indexerProgressBar;
+  bool _disableMpris;
 }
