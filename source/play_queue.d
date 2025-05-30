@@ -184,6 +184,12 @@ class PlayQueue : Box
     return (_searchString.length == 0 || (cast(SongColumnViewItem)item).song.name.toLower.canFind(_searchString)); // No search or search matches?
   }
 
+  /// Get count of songs in queue
+  @property uint songCount()
+  {
+    return cast(uint)_songs.length;
+  }
+
   /**
    * Open the queue file, load the data to the queue, or initialize it
    */

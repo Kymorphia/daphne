@@ -1,6 +1,7 @@
 module song_column_view;
 
 import std.conv : to;
+import std.variant : Variant;
 
 import gettext;
 import gio.list_model;

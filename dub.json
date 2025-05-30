@@ -9,9 +9,9 @@
 	"dependencies": {
 		"ddbc": "~>0.7.0",
 		"gettext": "~>1.0.4",
-		"gid:gst1": "==0.9.7",
-		"gid:gtk4": "==0.9.7",
+		"gid:gst1": {"repository": "git+https://github.com/Kymorphia/gid.git", "version": "~master"},
+		"gid:gtk4": {"repository": "git+https://github.com/Kymorphia/gid.git", "version": "~master"},
 		"taglib-d": "~>2.0.1"
 	},
-	"stringImportPaths": ["images"]
+	"stringImportPaths": ["data", "images"]
 }

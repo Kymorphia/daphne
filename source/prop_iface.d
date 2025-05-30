@@ -24,7 +24,7 @@ import std.format : format;
 public import std.json : JSONValue;
 import std.range : retro;
 import std.traits : isAggregateType, isArray, isAssociativeArray, isFloatingPoint, isNumeric, isSigned, isUnsigned;
-public import std.variant : Variant, VariantException;
+import std.variant : Variant, VariantException;
 
 public import signal;
 
@@ -261,7 +261,7 @@ enum PropFlags
   Inline = 1 << 2, /// Inline object (for object properties)
   NotSaved = 1 << 3, /// Property is not saved to files
   JsonOnly = 1 << 4, /// Saved/loaded from JSON only (no property setter/getter)
-  ThrowOrGc = 1 << 5, /// Property getter is not nothrow @nogc (default)
+  ThrowOrGc = 1 << 5, /// Property getter is not nothrow @nogc
   Override = 1 << 6, /// For overriding a parent property
 }
 
@@ -504,7 +504,8 @@ void jsonEncode(T)(T val, ref JSONValue js, JsonEncoderConfig encoderConfig)
 
 string definePropIface(Def, bool toplevel = false)()
 {
-  auto props = "private " ~ Def.stringof ~ " _props;\nmixin Signal!(PropIface, string, Variant, Variant) propChanged;\n\n";
+  auto props = "import std.variant : Variant, VariantException;\n";
+  props ~= "private " ~ Def.stringof ~ " _props;\nmixin Signal!(PropIface, string, Variant, Variant) propChanged;\n\n";
   auto propInfo = "static protected PropInfo[] _propInfo;\n"
     ~ (toplevel ? "" : "override ") ~ "PropInfo[] getPropInfoArray()\n{\nif (_propInfo.length == 0)\n{\n"
     ~ Def.stringof ~ " st;\nPropInfo info;\nlong ndx;\n";
@@ -630,9 +631,10 @@ string definePropIface(Def, bool toplevel = false)()
         ~ fieldName ~ ");\n";
     }
 
-    if ((propFlags & (PropFlags.ReadOnly | PropFlags.JsonOnly)) == 0) // Write property
+    if (!(propFlags & PropFlags.JsonOnly)) // Write property
     {
-      props ~= "public " ~ overrideStr ~ "@property void " ~ fieldName ~ "(" ~ fieldType ~ " value)\n{\n";
+      props ~= (propFlags & PropFlags.ReadOnly) ? "protected " : "public "; // Use protected setter if ReadOnly
+      props ~= overrideStr ~ "@property void " ~ fieldName ~ "(" ~ fieldType ~ " value)\n{\n";
       props ~= "if (_props." ~ fieldName ~ " == value)\nreturn;\n";
       props ~= "auto oldValue = _props." ~ fieldName ~ ";\n";
 

@@ -1,14 +1,15 @@
 module daphne;
 
-import std.algorithm : sort;
-import std.conv : to;
+import std.algorithm : map, sort;
+import std.conv : ConvException, to;
 import std.exception : ifThrown;
 import std.file : exists, mkdirRecurse;
 import std.format : format;
 import std.logger;
 import std.path : buildPath;
-import std.stdio : writeln;
-import std.string : toStringz;
+import std.stdio : stderr, writeln;
+import std.string : capitalize, join, toStringz;
+import std.traits : EnumMembers;
 
 import gdk.display;
 import gdk.texture;
@@ -41,6 +42,7 @@ import gtk.window;
 import library;
 import artist_view;
 import album_view;
+import mpris;
 import player;
 import play_queue;
 import prefs;
@@ -51,6 +53,28 @@ import song_view;
 enum DaphneVersion = "1.0";
 enum DaphneLogoSvg = import("daphne.svg");
 
+static this()
+{
+  sharedLog(cast(shared Logger)new DaphneLogger);
+}
+
+/// Create our own logger to strip out some of the extra info
+class DaphneLogger : Logger
+{
+  this(LogLevel lv = LogLevel.all) @safe
+  {
+    super(lv);
+  }
+
+  override void writeLogMsg(ref LogEntry entry)
+  {
+    if (entry.logLevel == LogLevel.info)
+      writeln(entry.msg);
+    else
+      writeln(entry.logLevel.to!string.capitalize ~ ": " ~ entry.msg);
+  }
+}
+
 class Daphne : Application
 {
   enum DefaultWidth = 1200;
@@ -60,6 +84,7 @@ class Daphne : Application
 
 	OptionEntry[] cmdLineOptions =
 		[
+      {"log-level", 0, 0, OptionArg.String, null, null, null},
 			{"version", 'v', 0, OptionArg.None, null, null, null},
 			{null, 0, 0, OptionArg.None, null, null, null}, // Terminator
 	];
@@ -88,6 +113,9 @@ MIT license`;
 
         switch (to!string(op.longName))
         {
+          case "log-level":
+            op.description = tr!("Log level (" ~ [EnumMembers!LogLevel].map!(x => x.to!string).join(", ") ~ ")").toStringz;
+            break;
           case "version":
             op.description = tr!"Print application version and exit".toStringz;
             break;
@@ -154,7 +182,7 @@ MIT license`;
     provider.loadFromString(".mono-class { font-family: monospace; }");
     StyleContext.addProviderForDisplay(Display.getDefault, provider, STYLE_PROVIDER_PRIORITY_APPLICATION);
 
-		auto mainWindow = new ApplicationWindow(this);
+		mainWindow = new ApplicationWindow(this);
     mainWindow.title = "Daphne";
     mainWindow.setDefaultSize(DefaultWidth, DefaultHeight);
     mainWindow.maximize;
@@ -270,6 +298,9 @@ MIT license`;
 
 		mainWindow.present;
 
+    mpris = new Mpris(this);
+    mpris.connect;
+
     timeoutAddSeconds(PRIORITY_DEFAULT, 1, &indexerProgressUpdate);
 
     library.runIndexerThread; // Re-index the music library on startup
@@ -366,6 +397,22 @@ MIT license`;
       return 0;
     }
 
+    LogLevel logLevel = LogLevel.warning;
+
+    if (auto logLevelStr = getStringOption("log-level"))
+    {
+      try
+        logLevel = logLevelStr.to!LogLevel;
+      catch (ConvException e)
+      {
+        error("Invalid LogLevel '" ~ logLevelStr ~ "' valid values are: " ~ [EnumMembers!LogLevel]
+          .map!(x => x.to!string).join(", "));
+        return 1;
+      }
+    }
+
+    globalLogLevel(logLevel);
+
     return -1; // Activate application
   }
 
@@ -433,6 +480,7 @@ MIT license`;
   SongDisplay songDisplay;
   PlayQueue playQueue;
   Player player;
+  Mpris mpris;
 
 private:
   Label _statusLabel;
