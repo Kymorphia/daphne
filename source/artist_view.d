@@ -3,7 +3,7 @@ module artist_view;
 import std.algorithm : canFind, endsWith, map, sort, startsWith;
 import std.array : array;
 import std.conv : to;
-import std.string : cmp, toLower;
+import std.string : icmp, toLower;
 
 import gettext;
 import gio.list_model;
@@ -28,7 +28,7 @@ import gtk.selection_model;
 import gtk.signal_list_item_factory;
 import gtk.sort_list_model;
 import gtk.text;
-import gtk.types : FilterChange, Orientation;
+import gtk.types : Align, FilterChange, Orientation, SortType;
 
 import daphne;
 import library;
@@ -59,11 +59,13 @@ class ArtistView : Box
 
     _searchFilter = new CustomFilter(&searchFilterFunc);
     auto filterListModel = new FilterListModel(_listModel, _searchFilter); // Used to filter on search text
-    _sortModel = new SortListModel(filterListModel, new CustomSorter(&artistSorter));
-    _selModel = new MultiSelection(_sortModel);
+    _selModel = new MultiSelection(filterListModel);
     _columnView = new ColumnView(_selModel);
     _columnView.addCssClass("data-table");
     _scrolledWindow.setChild(_columnView);
+
+    _sortModel = new SortListModel(filterListModel, _columnView.getSorter);
+    _selModel.model = _sortModel;
 
     _selModel.connectSelectionChanged(&onSelectionModelChanged);
 
@@ -71,17 +73,27 @@ class ArtistView : Box
     factory.connectSetup(&onArtistSetup);
     factory.connectBind(&onArtistBind);
     auto col = new ColumnViewColumn(tr!"Artist", factory);
-    _columnView.appendColumn(col);
     col.expand = true;
     col.resizable = true;
+    _columnView.appendColumn(col);
+
+    col.setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj) =>
+      icmp((cast(LibraryArtist)aObj).name, (cast(LibraryArtist)bObj).name)
+    ));
+
+    _columnView.sortByColumn(col, SortType.Ascending);
 
     factory = new SignalListItemFactory();
     factory.connectSetup(&onSongCountSetup);
     factory.connectBind(&onSongCountBind);
     col = new ColumnViewColumn(tr!"Songs", factory);
-    _columnView.appendColumn(col);
     col.expand = false;
     col.resizable = true;
+    _columnView.appendColumn(col);
+
+    col.setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj) =>
+      (cast(LibraryArtist)aObj).songCount - (cast(LibraryArtist)bObj).songCount
+    ));
   }
 
   private void onSearchEntryChanged()
@@ -106,16 +118,9 @@ class ArtistView : Box
 
   private bool searchFilterFunc(ObjectWrap item)
   {
-    auto artist = cast (LibraryArtist)item;
+    auto artist = cast(LibraryArtist)item;
     return artist.songCount > 1 // Filter out songs with only 1 song
       && (_searchString.length == 0 || (cast(LibraryItem)item).name.toLower.canFind(_searchString));
-  }
-
-  private int artistSorter(ObjectWrap aObj, ObjectWrap bObj)
-  {
-    auto artistA = cast(LibraryArtist)aObj;
-    auto artistB = cast(LibraryArtist)bObj;
-    return cmp(artistA.name, artistB.name);
   }
 
   private void onSelectionModelChanged()
@@ -156,7 +161,10 @@ class ArtistView : Box
 
   private void onSongCountSetup(ListItem listItem)
   {
-    listItem.setChild(new Label);
+    auto label = new Label;
+    label.halign = Align.Start;
+    label.hexpand = true;
+    listItem.setChild(label);
   }
 
   private void onSongCountBind(ListItem listItem)

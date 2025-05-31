@@ -1,6 +1,7 @@
 module song_column_view;
 
 import std.conv : to;
+import std.string : icmp;
 import std.variant : Variant;
 
 import gettext;
@@ -12,12 +13,13 @@ import gtk.bitset;
 import gtk.bitset_iter;
 import gtk.column_view;
 import gtk.column_view_column;
+import gtk.custom_sorter;
 import gtk.label;
 import gtk.list_item;
 import gtk.multi_selection;
 import gtk.signal_list_item_factory;
 import gtk.text;
-import gtk.types : FilterChange, Orientation;
+import gtk.types : FilterChange, Orientation, SortType;
 
 import library : UnknownName;
 import library_song;
@@ -29,7 +31,7 @@ import utils : formatSongTime, initTextNotEditable;
 /// Song column view widget. Used by SongView and PlayQueue
 class SongColumnView : ColumnView
 {
-  this()
+  this(bool enableSorting)
   {
     addCssClass("data-table");
 
@@ -37,6 +39,9 @@ class SongColumnView : ColumnView
     _selModel = new MultiSelection(_listModel);
     model = _selModel;
     addColumns;
+
+    if (enableSorting)
+      setColumnSorters;
 
     _selModel.connectSelectionChanged(&onSelectionModelChanged);
     _globalPropChangedHook = propChangedGlobal.connect(&onGlobalPropChanged);
@@ -50,10 +55,10 @@ class SongColumnView : ColumnView
   private void addColumns() // Add ColumnView columns
   { // Track
     auto factory = new SignalListItemFactory();
-    auto col = new ColumnViewColumn(tr!"Track", factory);
-    col.expand = false;
-    col.resizable = true;
-    appendColumn(col);
+    _columns[Column.Track] = new ColumnViewColumn(tr!"Track", factory);
+    _columns[Column.Track].expand = false;
+    _columns[Column.Track].resizable = true;
+    appendColumn(_columns[Column.Track]);
 
     factory.connectSetup((ListItem listItem) {
       auto text = new Text;
@@ -74,10 +79,10 @@ class SongColumnView : ColumnView
 
     // Title
     factory = new SignalListItemFactory();
-    col = new ColumnViewColumn(tr!"Title", factory);
-    col.expand = true;
-    col.resizable = true;
-    appendColumn(col);
+    _columns[Column.Title] = new ColumnViewColumn(tr!"Title", factory);
+    _columns[Column.Title].expand = true;
+    _columns[Column.Title].resizable = true;
+    appendColumn(_columns[Column.Title]);
 
     factory.connectSetup((ListItem listItem) {
       auto text = new Text;
@@ -96,10 +101,10 @@ class SongColumnView : ColumnView
 
     // Artist
     factory = new SignalListItemFactory();
-    col = new ColumnViewColumn(tr!"Artist", factory);
-    col.expand = true;
-    col.resizable = true;
-    appendColumn(col);
+    _columns[Column.Artist] = new ColumnViewColumn(tr!"Artist", factory);
+    _columns[Column.Artist].expand = true;
+    _columns[Column.Artist].resizable = true;
+    appendColumn(_columns[Column.Artist]);
 
     factory.connectSetup((ListItem listItem) {
       auto text = new Text;
@@ -118,10 +123,10 @@ class SongColumnView : ColumnView
 
     // Album
     factory = new SignalListItemFactory();
-    col = new ColumnViewColumn(tr!"Album", factory);
-    col.expand = true;
-    col.resizable = true;
-    appendColumn(col);
+    _columns[Column.Album] = new ColumnViewColumn(tr!"Album", factory);
+    _columns[Column.Album].expand = true;
+    _columns[Column.Album].resizable = true;
+    appendColumn(_columns[Column.Album]);
 
     factory.connectSetup((ListItem listItem) {
       auto text = new Text;
@@ -140,10 +145,10 @@ class SongColumnView : ColumnView
 
     // Year
     factory = new SignalListItemFactory();
-    col = new ColumnViewColumn(tr!"Year", factory);
-    col.expand = false;
-    col.resizable = true;
-    appendColumn(col);
+    _columns[Column.Year] = new ColumnViewColumn(tr!"Year", factory);
+    _columns[Column.Year].expand = false;
+    _columns[Column.Year].resizable = true;
+    appendColumn(_columns[Column.Year]);
 
     factory.connectSetup((ListItem listItem) {
       auto text = new Text;
@@ -163,10 +168,10 @@ class SongColumnView : ColumnView
 
     // Rating
     factory = new SignalListItemFactory();
-    col = new ColumnViewColumn(tr!"Rating", factory);
-    col.expand = false;
-    col.resizable = false;
-    appendColumn(col);
+    _columns[Column.Rating] = new ColumnViewColumn(tr!"Rating", factory);
+    _columns[Column.Rating].expand = false;
+    _columns[Column.Rating].resizable = false;
+    appendColumn(_columns[Column.Rating]);
 
     factory.connectSetup((ListItem listItem) {
       listItem.setChild(new Rating);
@@ -191,10 +196,10 @@ class SongColumnView : ColumnView
 
     // Length
     factory = new SignalListItemFactory();
-    col = new ColumnViewColumn(tr!"Length", factory);
-    col.expand = false;
-    col.resizable = true;
-    appendColumn(col);
+    _columns[Column.Length] = new ColumnViewColumn(tr!"Length", factory);
+    _columns[Column.Length].expand = false;
+    _columns[Column.Length].resizable = true;
+    appendColumn(_columns[Column.Length]);
 
     factory.connectSetup((ListItem listItem) {
       auto label = new Label;
@@ -211,6 +216,32 @@ class SongColumnView : ColumnView
       auto item = cast(SongColumnViewItem)listItem.getItem;
       item.lengthLabel = null;
     });
+  }
+
+  private void setColumnSorters() // Set sorters on each column
+  {
+    _columns[Column.Track].setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj)
+      => (cast(SongColumnViewItem)aObj).song.track - (cast(SongColumnViewItem)bObj).song.track));
+
+    _columns[Column.Title].setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj)
+      => icmp((cast(SongColumnViewItem)aObj).song.title, (cast(SongColumnViewItem)bObj).song.title)));
+
+    _columns[Column.Artist].setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj)
+      => icmp((cast(SongColumnViewItem)aObj).song.artist, (cast(SongColumnViewItem)bObj).song.artist)));
+
+    _columns[Column.Album].setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj)
+      => icmp((cast(SongColumnViewItem)aObj).song.album, (cast(SongColumnViewItem)bObj).song.album)));
+
+    _columns[Column.Year].setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj)
+      => (cast(SongColumnViewItem)aObj).song.year - (cast(SongColumnViewItem)bObj).song.year));
+
+    _columns[Column.Rating].setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj)
+      => (cast(SongColumnViewItem)aObj).song.rating - (cast(SongColumnViewItem)bObj).song.rating));
+
+    _columns[Column.Length].setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj)
+      => (cast(SongColumnViewItem)aObj).song.length - (cast(SongColumnViewItem)bObj).song.length));
+
+    sortByColumn(_columns[Column.Title], SortType.Ascending);
   }
 
   // Callback for global PropIface object property changes
@@ -289,7 +320,19 @@ class SongColumnView : ColumnView
 
   LibrarySong[] selection;
 
+  enum Column
+  {
+    Track,
+    Title,
+    Artist,
+    Album,
+    Year,
+    Rating,
+    Length,
+  }
+
 private:
+  ColumnViewColumn[Column.max + 1] _columns;
   string _searchString;
   MultiSelection _selModel;
   ListStore _listModel;

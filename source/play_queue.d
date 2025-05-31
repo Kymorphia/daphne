@@ -68,7 +68,7 @@ class PlayQueue : Box, PropIface
     _scrolledWindow.setHexpand(true);
     append(_scrolledWindow);
 
-    _songColumnView = new SongColumnView;
+    _songColumnView = new SongColumnView(false);
     _scrolledWindow.setChild(_songColumnView);
 
     _selModel = cast(MultiSelection)_songColumnView.model;

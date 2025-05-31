@@ -125,8 +125,6 @@ MIT license`;
           default:
             assert(0);
         }
- 
-        writeln(op.description);
       }
 
       cmdLineOptionsInitialized = true;
@@ -273,8 +271,8 @@ MIT license`;
     }
 
     artistView.selectionChanged.connect((LibraryArtist[] selectedArtists) {
-      albumView.setArtists(selectedArtists);
-      songView.setArtists(selectedArtists);
+      albumView.filterArtists(selectedArtists);
+      songView.filterArtists(selectedArtists);
     });
 
     albumView.selectionChanged.connect((LibraryAlbum[] selectedAlbums) {

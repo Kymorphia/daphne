@@ -55,7 +55,7 @@ class SongView : Box
     _scrolledWindow.setHexpand(true);
     append(_scrolledWindow);
 
-    _songColumnView = new SongColumnView;
+    _songColumnView = new SongColumnView(true);
     _scrolledWindow.setChild(_songColumnView);
 
     auto selModel = cast(MultiSelection)_songColumnView.model;
@@ -66,11 +66,8 @@ class SongView : Box
 
     _searchFilter = new CustomFilter(&searchFilterFunc);
     auto filterListModel = new FilterListModel(listModel, _searchFilter); // Used to filter on search text
-    _titleSorter = new CustomSorter(&titleSorter);
-    _sortModel = new SortListModel(filterListModel, _titleSorter);
+    _sortModel = new SortListModel(filterListModel, _songColumnView.getSorter);
     selModel.model = _sortModel;
-
-    _artistAlbumTrackSorter = new CustomSorter(&artistAlbumTrackSorter);
 
     _songColumnView.selectionChanged.connect((LibrarySong[] selection) {
       selectionChanged.emit(selection);
@@ -123,44 +120,12 @@ class SongView : Box
       && (_filterAlbums.length > 0 || _filterArtists.length == 0 || _filterArtists.canFind(libSong.libAlbum.artist)); // And albums filter or no artists filter or artist matches
   }
 
-  private int titleSorter(ObjectWrap aObj, ObjectWrap bObj)
-  {
-    auto aSong = (cast(SongColumnViewItem)aObj).song;
-    auto bSong = (cast(SongColumnViewItem)bObj).song;
-    return icmp(aSong.title, bSong.title);
-  }
-
-  private int artistAlbumTrackSorter(ObjectWrap aObj, ObjectWrap bObj)
-  {
-    auto aSong = (cast(SongColumnViewItem)aObj).song;
-    auto bSong = (cast(SongColumnViewItem)bObj).song;
-
-    if (aSong.artist < bSong.artist)
-      return -1;
-    else if (aSong.artist > bSong.artist)
-      return 1;
-    else if (aSong.libAlbum.year > bSong.libAlbum.year) // Reverse order album year (newest first)
-      return -1;
-    else if (aSong.libAlbum.year < bSong.libAlbum.year) // Reverse order album year (newest first)
-      return 1;
-    else if (aSong.libAlbum.name < bSong.libAlbum.name)
-      return -1;
-    else if (aSong.libAlbum.name > bSong.libAlbum.name)
-      return 1;
-    else if (aSong.track < bSong.track)
-      return -1;
-    else if (aSong.track > bSong.track)
-      return 1;
-    else
-      return icmp(aSong.title, bSong.title);
-  }
-
   /**
    * Set the filter of artists to show songs for.
    * Params:
    *   artists = List of artists to filter by or empty/null to not filter
    */
-  void setArtists(LibraryArtist[] artists)
+  void filterArtists(LibraryArtist[] artists)
   {
     _filterArtists = artists;
     _searchFilter.changed(FilterChange.Different);
@@ -175,9 +140,6 @@ class SongView : Box
   {
     _filterAlbums = albums;
     _searchFilter.changed(FilterChange.Different);
-
-    // If no albums are assigned sort by the default (song title), otherwise sort by artist, album, track, title
-    _sortModel.sorter = albums.length > 0 ? _artistAlbumTrackSorter : _titleSorter;
   }
 
   /**
@@ -199,8 +161,6 @@ private:
   ScrolledWindow _scrolledWindow;
   CustomFilter _searchFilter;
   SortListModel _sortModel;
-  CustomSorter _titleSorter;
-  CustomSorter _artistAlbumTrackSorter;
   SongColumnView _songColumnView;
   Button _queueSongsButton;
 

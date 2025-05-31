@@ -3,7 +3,7 @@ module album_view;
 import std.algorithm : canFind, endsWith, map, sort, startsWith;
 import std.array : array;
 import std.conv : to;
-import std.string : cmp, toLower;
+import std.string : icmp, toLower;
 
 import gettext;
 import gio.list_model;
@@ -19,6 +19,7 @@ import gtk.bitset_iter;
 import gtk.box;
 import gtk.column_view;
 import gtk.column_view_column;
+import gtk.column_view_sorter;
 import gtk.custom_filter;
 import gtk.custom_sorter;
 import gtk.filter_list_model;
@@ -31,7 +32,7 @@ import gtk.selection_model;
 import gtk.signal_list_item_factory;
 import gtk.sort_list_model;
 import gtk.text;
-import gtk.types : FilterChange, Orientation;
+import gtk.types : Align, FilterChange, Orientation, SortType;
 
 import daphne;
 import library;
@@ -40,6 +41,8 @@ import signal;
 /// Album view widget
 class AlbumView : Box
 {
+  immutable Column[] DefaultSortColumns = [Column.Album, Column.Artist]; // Default column sorting (reverse priority order, last is highest)
+
   this(Daphne daphne)
   {
     super(Orientation.Vertical, 0);
@@ -55,6 +58,10 @@ class AlbumView : Box
     _scrolledWindow.setHexpand(true);
     append(_scrolledWindow);
 
+    _columnView = new ColumnView(null);
+    _columnView.addCssClass("data-table");
+    _scrolledWindow.setChild(_columnView);
+
     _listModel = new ListStore(GTypeEnum.Object);
 
     foreach (artist; _daphne.library.artists)
@@ -63,45 +70,62 @@ class AlbumView : Box
 
     _searchFilter = new CustomFilter(&searchFilterFunc);
     auto filterListModel = new FilterListModel(_listModel, _searchFilter); // Used to filter on search text
-    _sortModel = new SortListModel(filterListModel, new CustomSorter(&albumSorter));
-    _selModel = new MultiSelection(_sortModel);
-    _columnView = new ColumnView(_selModel);
-    _columnView.addCssClass("data-table");
-    _scrolledWindow.setChild(_columnView);
+    auto sortModel = new SortListModel(filterListModel, _columnView.getSorter);
+    _selModel = new MultiSelection(sortModel);
+    _columnView.model = _selModel;
 
     _selModel.connectSelectionChanged(&onSelectionModelChanged);
 
     auto factory = new SignalListItemFactory();
     factory.connectSetup(&onAlbumSetup);
     factory.connectBind(&onAlbumBind);
-    auto col = new ColumnViewColumn(tr!"Album", factory);
-    _columnView.appendColumn(col);
-    col.expand = true;
-    col.resizable = true;
+    _columns[Column.Album] = new ColumnViewColumn(tr!"Album", factory);
+    _columns[Column.Album].expand = true;
+    _columns[Column.Album].resizable = true;
+    _columnView.appendColumn(_columns[Column.Album]);
+
+    _columns[Column.Album].setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj) =>
+      icmp((cast(LibraryAlbum)aObj).name, (cast(LibraryAlbum)bObj).name)
+    ));
 
     factory = new SignalListItemFactory();
     factory.connectSetup(&onArtistSetup);
     factory.connectBind(&onArtistBind);
-    col = new ColumnViewColumn(tr!"Artist", factory);
-    _columnView.appendColumn(col);
-    col.expand = true;
-    col.resizable = true;
+    _columns[Column.Artist] = new ColumnViewColumn(tr!"Artist", factory);
+    _columns[Column.Artist].expand = true;
+    _columns[Column.Artist].resizable = true;
+    _columnView.appendColumn(_columns[Column.Artist]);
+
+    _columns[Column.Artist].setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj) =>
+      icmp((cast(LibraryAlbum)aObj).artist.name, (cast(LibraryAlbum)bObj).artist.name)
+    ));
 
     factory = new SignalListItemFactory();
     factory.connectSetup(&onYearSetup);
     factory.connectBind(&onYearBind);
-    col = new ColumnViewColumn(tr!"Year", factory);
-    _columnView.appendColumn(col);
-    col.expand = false;
-    col.resizable = true;
+    _columns[Column.Year] = new ColumnViewColumn(tr!"Year", factory);
+    _columns[Column.Year].expand = false;
+    _columns[Column.Year].resizable = true;
+    _columnView.appendColumn(_columns[Column.Year]);
+
+    _columns[Column.Year].setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj) =>
+      cast(int)(cast(LibraryAlbum)aObj).year - cast(int)(cast(LibraryAlbum)bObj).year
+    ));
 
     factory = new SignalListItemFactory();
     factory.connectSetup(&onSongCountSetup);
     factory.connectBind(&onSongCountBind);
-    col = new ColumnViewColumn(tr!"Songs", factory);
-    _columnView.appendColumn(col);
-    col.expand = false;
-    col.resizable = true;
+    _columns[Column.SongCount] = new ColumnViewColumn(tr!"Songs", factory);
+    _columns[Column.SongCount].expand = false;
+    _columns[Column.SongCount].resizable = true;
+    _columnView.appendColumn(_columns[Column.SongCount]);
+
+    _columns[Column.SongCount].setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj) =>
+      cast(int)(cast(LibraryAlbum)aObj).songCount - cast(int)(cast(LibraryAlbum)bObj).songCount
+    ));
+
+    foreach (colEnum; DefaultSortColumns)
+      _columnView.sortByColumn(_columns[colEnum], SortType.Ascending);
   }
 
   private void onSearchEntryChanged()
@@ -133,19 +157,6 @@ class AlbumView : Box
       && (_filterArtists.length == 0 || _filterArtists.canFind(album.artist));
   }
 
-  private int albumSorter(ObjectWrap aObj, ObjectWrap bObj)
-  {
-    auto albumA = cast(LibraryAlbum)aObj;
-    auto albumB = cast(LibraryAlbum)bObj;
-
-    auto retval = cmp(albumA.artist.name, albumB.artist.name);
-
-    if (retval != 0)
-      return retval;
-
-    return cmp(albumA.name, albumB.name);
-  }
-
   private void onSelectionModelChanged()
   {
     selection = [];
@@ -175,7 +186,7 @@ class AlbumView : Box
   {
     auto album = cast(LibraryAlbum)listItem.getItem;
     auto text = cast(Text)listItem.getChild;
-    text.getBuffer.setText(album.name, -1);
+    text.getBuffer.setText(album.name ? album.name : tr!UnknownName, -1);
     text.setEditable(false);
     text.setCanFocus(false);
     text.setCanTarget(false);
@@ -193,7 +204,7 @@ class AlbumView : Box
   {
     auto album = cast(LibraryAlbum)listItem.getItem;
     auto text = cast(Text)listItem.getChild;
-    text.getBuffer.setText(album.artist.name, -1);
+    text.getBuffer.setText(album.artist.name ? album.artist.name : tr!UnknownName, -1);
     text.setEditable(false);
     text.setCanFocus(false);
     text.setCanTarget(false);
@@ -202,18 +213,21 @@ class AlbumView : Box
 
   private void onYearSetup(ListItem listItem)
   {
-    listItem.setChild(new Label);
+    listItem.setChild(new Text);
   }
 
   private void onYearBind(ListItem listItem)
   {
     auto year = (cast(LibraryAlbum)listItem.getItem).year;
-    (cast(Label)listItem.getChild).setText(year > 0 ? year.to!string : null);
+    (cast(Text)listItem.getChild).setText(year > 0 ? year.to!string : "");
   }
 
   private void onSongCountSetup(ListItem listItem)
   {
-    listItem.setChild(new Label);
+    auto label = new Label;
+    label.halign = Align.Start;
+    label.hexpand = true;
+    listItem.setChild(label);
   }
 
   private void onSongCountBind(ListItem listItem)
@@ -226,7 +240,7 @@ class AlbumView : Box
    * Params:
    *   artists = List of artists to filter by or empty/null to not filter
    */
-  void setArtists(LibraryArtist[] artists)
+  void filterArtists(LibraryArtist[] artists)
   {
     _filterArtists = artists;
     _searchFilter.changed(FilterChange.Different);
@@ -244,17 +258,25 @@ class AlbumView : Box
 
   LibraryAlbum[] selection;
 
+  enum Column
+  {
+    Album,
+    Artist,
+    Year,
+    SongCount,
+  }
+
 private:
   Daphne _daphne;
   SearchEntry _searchEntry;
   ulong _searchChangedHandler; // connectSearchChanged handler
   string _searchString;
   ScrolledWindow _scrolledWindow;
-  SortListModel _sortModel;
   MultiSelection _selModel;
   ListStore _listModel;
   CustomFilter _searchFilter;
   ColumnView _columnView;
+  ColumnViewColumn[Column.max + 1] _columns;
 
   LibraryArtist[] _filterArtists;
 }
