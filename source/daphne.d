@@ -18,8 +18,8 @@ import gio.menu;
 import gio.simple_action;
 import gio.types : ApplicationFlags;
 import glib.bytes;
-import glib.global : getUserConfigDir, timeoutAddSeconds;
-import glib.types : OptionArg, OptionEntry, PRIORITY_DEFAULT, SOURCE_CONTINUE;
+import glib.global : getUserConfigDir, idleAdd, timeoutAddSeconds;
+import glib.types : OptionArg, OptionEntry, PRIORITY_DEFAULT, PRIORITY_DEFAULT_IDLE, SOURCE_CONTINUE, SOURCE_REMOVE;
 import glib.variant_dict;
 import glib.variant_type;
 import gobject.types : GTypeEnum;
@@ -309,6 +309,18 @@ MIT license`;
     timeoutAddSeconds(PRIORITY_DEFAULT, 1, &indexerProgressUpdate);
 
     library.runIndexerThread; // Re-index the music library on startup
+
+    // FIXME - Hack to prevent changing width request of album view from changing the Paned gutter position
+    idleAdd(PRIORITY_DEFAULT_IDLE, () {
+      auto pos = albumView.getAllocatedWidth;
+      if (pos > 0)
+      {
+        hPaned2.position = pos;
+        return SOURCE_REMOVE;
+      }
+
+      return SOURCE_CONTINUE;
+    });
 	}
 
   private bool indexerProgressUpdate() // Called periodically to process background indexer updates

@@ -3,6 +3,7 @@ module album_view;
 import std.algorithm : canFind, endsWith, map, sort, startsWith;
 import std.array : array;
 import std.conv : to;
+import std.format : format;
 import std.string : icmp, toLower;
 
 import gettext;
@@ -17,6 +18,7 @@ import gobject.value;
 import gtk.bitset;
 import gtk.bitset_iter;
 import gtk.box;
+import gtk.button;
 import gtk.column_view;
 import gtk.column_view_column;
 import gtk.column_view_sorter;
@@ -31,10 +33,11 @@ import gtk.search_entry;
 import gtk.selection_model;
 import gtk.signal_list_item_factory;
 import gtk.sort_list_model;
-import gtk.text;
+import gtk.toggle_button;
 import gtk.types : Align, FilterChange, Orientation, SortType;
 
 import daphne;
+import edit_field;
 import library;
 import signal;
 
@@ -48,10 +51,31 @@ class AlbumView : Box
     super(Orientation.Vertical, 0);
     _daphne = daphne;
 
+    auto hbox = new Box(Orientation.Horizontal, 0);
+    append(hbox);
+
     _searchEntry = new SearchEntry;
+    _searchEntry.hexpand = true;
     _searchChangedHandler = _searchEntry.connectSearchChanged(&onSearchEntryChanged);
     _searchEntry.searchDelay = 500;
-    append(_searchEntry);
+    hbox.append(_searchEntry);
+
+    _selectionClearBtn = Button.newWithLabel("");
+    _selectionClearBtn.visible = false;
+    hbox.append(_selectionClearBtn);
+
+    _selectionClearBtn.connectClicked(() {
+      clearSelection;
+    });
+
+    auto showSingleToggle = new ToggleButton;
+    showSingleToggle.setChild(new Label("1"));
+    hbox.append(showSingleToggle);
+
+    showSingleToggle.connectToggled(() {
+      _showAlbumSingles = showSingleToggle.active;
+      _searchFilter.changed(_showAlbumSingles ? FilterChange.LessStrict : FilterChange.MoreStrict);
+    });
 
     _scrolledWindow = new ScrolledWindow;
     _scrolledWindow.setVexpand(true);
@@ -64,9 +88,8 @@ class AlbumView : Box
 
     _listModel = new ListStore(GTypeEnum.Object);
 
-    foreach (artist; _daphne.library.artists)
-      foreach (album; artist.albums)
-        _listModel.append(album);
+    foreach (album; _daphne.library.albums)
+      _listModel.append(album);
 
     _searchFilter = new CustomFilter(&searchFilterFunc);
     auto filterListModel = new FilterListModel(_listModel, _searchFilter); // Used to filter on search text
@@ -152,9 +175,9 @@ class AlbumView : Box
   {
     auto album = cast(LibraryAlbum)item;
 
-    return album.songCount > 1 // Filter out albums with only 1 song
+    return (_showAlbumSingles || album.songCount > 1) // Filter out albums with only 1 song if show singles toggle button is not pressed
       && (_searchString.length == 0 || album.name.toLower.canFind(_searchString))
-      && (_filterArtists.length == 0 || _filterArtists.canFind(album.artist));
+      && (_filterArtists.length == 0 || _filterArtists.canFind(album.artist.name.toLower));
   }
 
   private void onSelectionModelChanged()
@@ -172,61 +195,54 @@ class AlbumView : Box
       while (iter.next(position));
     }
 
+    if (selection.length > 0)
+    {
+      _selectionClearBtn.label = format(tr!"%d selected", selection.length);
+      _selectionClearBtn.visible = true;
+    }
+    else
+      _selectionClearBtn.visible = false;
+
     selectionChanged.emit(selection);
   }
 
   private void onAlbumSetup(ListItem listItem)
   {
-    auto text = new Text;
-    text.hexpand = true;
-    listItem.setChild(text);
+    listItem.setChild(new EditField);
   }
 
   private void onAlbumBind(ListItem listItem)
   {
     auto album = cast(LibraryAlbum)listItem.getItem;
-    auto text = cast(Text)listItem.getChild;
-    text.getBuffer.setText(album.name ? album.name : tr!UnknownName, -1);
-    text.setEditable(false);
-    text.setCanFocus(false);
-    text.setCanTarget(false);
-    text.setFocusOnClick(false);
+    (cast(EditField)listItem.getChild).content = album.name ? album.name : tr!UnknownName;
   }
 
   private void onArtistSetup(ListItem listItem)
   {
-    auto text = new Text;
-    text.hexpand = true;
-    listItem.setChild(text);
+    listItem.setChild(new EditField);
   }
 
   private void onArtistBind(ListItem listItem)
   {
     auto album = cast(LibraryAlbum)listItem.getItem;
-    auto text = cast(Text)listItem.getChild;
-    text.getBuffer.setText(album.artist.name ? album.artist.name : tr!UnknownName, -1);
-    text.setEditable(false);
-    text.setCanFocus(false);
-    text.setCanTarget(false);
-    text.setFocusOnClick(false);
+    (cast(EditField)listItem.getChild).content = album.artist.name ? album.artist.name : tr!UnknownName;
   }
 
   private void onYearSetup(ListItem listItem)
   {
-    listItem.setChild(new Text);
+    listItem.setChild(new EditField(cast(uint)LibrarySong.MaxYear.to!string.length));
   }
 
   private void onYearBind(ListItem listItem)
   {
     auto year = (cast(LibraryAlbum)listItem.getItem).year;
-    (cast(Text)listItem.getChild).setText(year > 0 ? year.to!string : "");
+    (cast(EditField)listItem.getChild).content = year > 0 ? year.to!string : "";
   }
 
   private void onSongCountSetup(ListItem listItem)
   {
     auto label = new Label;
     label.halign = Align.Start;
-    label.hexpand = true;
     listItem.setChild(label);
   }
 
@@ -242,7 +258,8 @@ class AlbumView : Box
    */
   void filterArtists(LibraryArtist[] artists)
   {
-    _filterArtists = artists;
+    clearSelection; // Make sure to do this before changing the filter or it wont work right
+    _filterArtists = artists.map!(x => x.name.toLower).array;
     _searchFilter.changed(FilterChange.Different);
   }
 
@@ -252,6 +269,12 @@ class AlbumView : Box
   void addAlbum(LibraryAlbum album)
   {
     _listModel.append(album);
+  }
+
+  /// Clear the selection
+  void clearSelection()
+  {
+    _selModel.unselectAll;
   }
 
   mixin Signal!(LibraryAlbum[]) selectionChanged; /// Selected albums changed signal
@@ -277,6 +300,7 @@ private:
   CustomFilter _searchFilter;
   ColumnView _columnView;
   ColumnViewColumn[Column.max + 1] _columns;
-
-  LibraryArtist[] _filterArtists;
+  string[] _filterArtists;
+  Button _selectionClearBtn;
+  bool _showAlbumSingles;
 }

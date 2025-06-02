@@ -18,15 +18,15 @@ import gtk.label;
 import gtk.list_item;
 import gtk.multi_selection;
 import gtk.signal_list_item_factory;
-import gtk.text;
 import gtk.types : FilterChange, Orientation, SortType;
 
+import edit_field;
 import library : UnknownName;
 import library_song;
 import prop_iface;
 import rating;
 import signal;
-import utils : formatSongTime, initTextNotEditable;
+import utils : formatSongTime;
 
 /// Song column view widget. Used by SongView and PlayQueue
 class SongColumnView : ColumnView
@@ -61,20 +61,16 @@ class SongColumnView : ColumnView
     appendColumn(_columns[Column.Track]);
 
     factory.connectSetup((ListItem listItem) {
-      auto text = new Text;
-      text.widthChars = cast(int)LibrarySong.MaxTrack.to!string.length;
-      text.maxWidthChars = text.widthChars;
-      listItem.setChild(text);
+      listItem.setChild(new EditField(cast(int)LibrarySong.MaxTrack.to!string.length));
     });
     factory.connectBind((ListItem listItem) {
       auto item = cast(SongColumnViewItem)listItem.getItem;
-      item.trackText = cast(Text)listItem.getChild;
-      auto track = item.song.track;
-      item.trackText.initTextNotEditable(track > 0 ? track.to!string : "");
+      item.trackField = cast(EditField)listItem.getChild;
+      item.trackField.content(item.song.track > 0 ? item.song.track.to!string : "");
     });
     factory.connectUnbind((ListItem listItem) {
       auto item = cast(SongColumnViewItem)listItem.getItem;
-      item.trackText = null;
+      item.trackField = null;
     });
 
     // Title
@@ -85,18 +81,16 @@ class SongColumnView : ColumnView
     appendColumn(_columns[Column.Title]);
 
     factory.connectSetup((ListItem listItem) {
-      auto text = new Text;
-      text.hexpand = true;
-      listItem.setChild(text);
+      listItem.setChild(new EditField);
     });
     factory.connectBind((ListItem listItem) {
       auto item = cast(SongColumnViewItem)listItem.getItem;
-      item.titleText = cast(Text)listItem.getChild;
-      item.titleText.initTextNotEditable(item.song.title.length > 0 ? item.song.title : tr!UnknownName);
+      item.titleField = cast(EditField)listItem.getChild;
+      item.titleField.content = item.song.title.length > 0 ? item.song.title : tr!UnknownName;
     });
     factory.connectUnbind((ListItem listItem) {
       auto item = cast(SongColumnViewItem)listItem.getItem;
-      item.titleText = null;
+      item.titleField = null;
     });
 
     // Artist
@@ -107,18 +101,16 @@ class SongColumnView : ColumnView
     appendColumn(_columns[Column.Artist]);
 
     factory.connectSetup((ListItem listItem) {
-      auto text = new Text;
-      text.hexpand = true;
-      listItem.setChild(text);
+      listItem.setChild(new EditField);
     });
     factory.connectBind((ListItem listItem) {
       auto item = cast(SongColumnViewItem)listItem.getItem;
-      item.artistText = cast(Text)listItem.getChild;
-      item.artistText.initTextNotEditable(item.song.artist.length > 0 ? item.song.artist : tr!UnknownName);
+      item.artistField = cast(EditField)listItem.getChild;
+      item.artistField.content = item.song.artist.length > 0 ? item.song.artist : tr!UnknownName;
     });
     factory.connectUnbind((ListItem listItem) {
       auto item = cast(SongColumnViewItem)listItem.getItem;
-      item.artistText = null;
+      item.artistField = null;
     });
 
     // Album
@@ -129,18 +121,16 @@ class SongColumnView : ColumnView
     appendColumn(_columns[Column.Album]);
 
     factory.connectSetup((ListItem listItem) {
-      auto text = new Text;
-      text.hexpand = true;
-      listItem.setChild(text);
+      listItem.setChild(new EditField);
     });
     factory.connectBind((ListItem listItem) {
       auto item = cast(SongColumnViewItem)listItem.getItem;
-      item.albumText = cast(Text)listItem.getChild;
-      item.albumText.initTextNotEditable(item.song.album.length > 0 ? item.song.album : tr!UnknownName);
+      item.albumField = cast(EditField)listItem.getChild;
+      item.albumField.content = item.song.album.length > 0 ? item.song.album : tr!UnknownName;
     });
     factory.connectUnbind((ListItem listItem) {
       auto item = cast(SongColumnViewItem)listItem.getItem;
-      item.albumText = null;
+      item.albumField = null;
     });
 
     // Year
@@ -151,19 +141,16 @@ class SongColumnView : ColumnView
     appendColumn(_columns[Column.Year]);
 
     factory.connectSetup((ListItem listItem) {
-      auto text = new Text;
-      text.widthChars = cast(int)LibrarySong.MaxYear.to!string.length;
-      text.maxWidthChars = text.widthChars;
-      listItem.setChild(text);
+      listItem.setChild(new EditField(cast(int)LibrarySong.MaxYear.to!string.length));
     });
     factory.connectBind((ListItem listItem) {
       auto item = cast(SongColumnViewItem)listItem.getItem;
-      item.yearText = cast(Text)listItem.getChild;
-      item.yearText.initTextNotEditable(item.song.year > 0 ? item.song.year.to!string : "");
+      item.yearField = cast(EditField)listItem.getChild;
+      item.yearField.content = item.song.year > 0 ? item.song.year.to!string : "";
     });
     factory.connectUnbind((ListItem listItem) {
       auto item = cast(SongColumnViewItem)listItem.getItem;
-      item.yearText = null;
+      item.yearField = null;
     });
 
     // Rating
@@ -254,12 +241,12 @@ class SongColumnView : ColumnView
         switch (propName)
         {
           case "album":
-            if (item.albumText)
-              item.albumText.text = song.album;
+            if (item.albumField)
+              item.albumField.content = song.album;
             break;
           case "artist":
-            if (item.artistText)
-              item.artistText.text = song.artist;
+            if (item.artistField)
+              item.artistField.content = song.artist;
             break;
           case "length":
             if (item.lengthLabel)
@@ -270,16 +257,16 @@ class SongColumnView : ColumnView
               item.ratingWidg.value = song.rating;
             break;
           case "track":
-            if (item.trackText)
-              item.trackText.text = song.track > 0 ? song.track.to!string : null;
+            if (item.trackField)
+              item.trackField.content = song.track > 0 ? song.track.to!string : null;
             break;
           case "title":
-            if (item.titleText)
-              item.titleText.text = song.title;
+            if (item.titleField)
+              item.titleField.content = song.title;
             break;
           case "year":
-            if (item.yearText)
-              item.yearText.text = song.year > 0 ? song.year.to!string : null;
+            if (item.yearField)
+              item.yearField.content = song.year > 0 ? song.year.to!string : null;
             break;
           default:
             break;
@@ -354,12 +341,12 @@ class SongColumnViewItem : ObjectWrap
 
   LibrarySong song; // The song
   long queueId; // Queue ID (use by PlayQueue only)
-  Text albumText;
-  Text artistText;
+  EditField albumField;
+  EditField artistField;
   Label lengthLabel;
   Rating ratingWidg;
   Rating.SignalHook* ratingWidgChangedHook;
-  Text trackText;
-  Text titleText;
-  Text yearText;
+  EditField trackField;
+  EditField titleField;
+  EditField yearField;
 }

@@ -3,7 +3,6 @@ module utils;
 import std.format : format;
 
 import ddbc : Connection;
-import gtk.text;
 
 void executeSql(Connection conn, string sql)
 {
@@ -33,19 +32,4 @@ string formatSongTime(uint timeSecs, uint durationSecs = 0)
     return format("%02u:%02u", timeSecs / 60, timeSecs % 60);
   else
     return format("%u:%02u:%02u", timeSecs / 3600, (timeSecs % 3600) / 60, timeSecs % 60);
-}
-
-/**
- * Create a Text widget for use in a ColumnView which is initialized with editing disabled.
- * Params:
- *   text = The text widget
- *   val = String value to assign
- */
-void initTextNotEditable(Text text, string val)
-{
-  text.getBuffer.text = val;
-  text.editable = false;
-  text.canFocus = false;
-  text.canTarget = false;
-  text.focusOnClick = false;
 }

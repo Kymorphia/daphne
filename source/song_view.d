@@ -1,6 +1,8 @@
 module song_view;
 
-import std.algorithm : canFind, endsWith, startsWith;
+import std.algorithm : canFind, endsWith, map, startsWith;
+import std.array : array;
+import std.format : format;
 import std.string : icmp, toLower;
 
 import gettext;
@@ -24,7 +26,7 @@ import prop_iface;
 import rating;
 import signal;
 import song_column_view;
-import utils : formatSongTime, initTextNotEditable;
+import utils : formatSongTime;
 
 /// Song view widget
 class SongView : Box
@@ -43,7 +45,15 @@ class SongView : Box
     _searchEntry.hexpand = true;
     hbox.append(_searchEntry);
 
-    _queueSongsButton = Button.newFromIconName("go-down");
+    _selectionClearBtn = Button.newWithLabel("");
+    _selectionClearBtn.visible = false;
+    hbox.append(_selectionClearBtn);
+
+    _selectionClearBtn.connectClicked(() {
+      clearSelection;
+    });
+
+    _queueSongsButton = Button.newFromIconName("list-add");
     _queueSongsButton.hexpand = false;
     _queueSongsButton.tooltipText = tr!"Add songs to queue";
     hbox.append(_queueSongsButton);
@@ -58,8 +68,8 @@ class SongView : Box
     _songColumnView = new SongColumnView(true);
     _scrolledWindow.setChild(_songColumnView);
 
-    auto selModel = cast(MultiSelection)_songColumnView.model;
-    auto listModel = cast(ListStore)selModel.model;
+    _selModel = cast(MultiSelection)_songColumnView.model;
+    auto listModel = cast(ListStore)_selModel.model;
 
     foreach (song; _daphne.library.songFiles.values)
       _songColumnView.addSong(song);
@@ -67,10 +77,18 @@ class SongView : Box
     _searchFilter = new CustomFilter(&searchFilterFunc);
     auto filterListModel = new FilterListModel(listModel, _searchFilter); // Used to filter on search text
     _sortModel = new SortListModel(filterListModel, _songColumnView.getSorter);
-    selModel.model = _sortModel;
+    _selModel.model = _sortModel;
 
     _songColumnView.selectionChanged.connect((LibrarySong[] selection) {
       selectionChanged.emit(selection);
+
+      if (selection.length > 0)
+      {
+        _selectionClearBtn.label = format(tr!"%d selected", selection.length);
+        _selectionClearBtn.visible = true;
+      }
+      else
+        _selectionClearBtn.visible = false;
     });
   }
 
@@ -116,8 +134,8 @@ class SongView : Box
     auto libSong = (cast(SongColumnViewItem)item).song;
 
     return (_searchString.length == 0 || libSong.name.toLower.canFind(_searchString)) // No search or search matches?
-      && (_filterAlbums.length == 0 || _filterAlbums.canFind(libSong.libAlbum)) // And no albums filter or album matches
-      && (_filterAlbums.length > 0 || _filterArtists.length == 0 || _filterArtists.canFind(libSong.libAlbum.artist)); // And albums filter or no artists filter or artist matches
+      && (_filterAlbums.length == 0 || _filterAlbums.canFind(libSong.album.toLower)) // And no albums filter or album matches
+      && (_filterAlbums.length > 0 || _filterArtists.length == 0 || _filterArtists.canFind(libSong.artist.toLower)); // And albums filter or no artists filter or artist matches
   }
 
   /**
@@ -127,7 +145,8 @@ class SongView : Box
    */
   void filterArtists(LibraryArtist[] artists)
   {
-    _filterArtists = artists;
+    clearSelection; // Make sure to do this before changing the filter or it wont work right
+    _filterArtists = artists.map!(x => x.name.toLower).array;
     _searchFilter.changed(FilterChange.Different);
   }
 
@@ -138,7 +157,8 @@ class SongView : Box
    */
   void setAlbums(LibraryAlbum[] albums)
   {
-    _filterAlbums = albums;
+    clearSelection; // Make sure to do this before changing the filter or it wont work right
+    _filterAlbums = albums.map!(x => x.name.toLower).array;
     _searchFilter.changed(FilterChange.Different);
   }
 
@@ -148,6 +168,12 @@ class SongView : Box
   void addSong(LibrarySong song)
   {
     _songColumnView.addSong(song);
+  }
+
+  /// Clear the selection
+  void clearSelection()
+  {
+    _selModel.unselectAll;
   }
 
   mixin Signal!(LibrarySong[]) selectionChanged; /// Selected songs changed signal
@@ -161,9 +187,10 @@ private:
   ScrolledWindow _scrolledWindow;
   CustomFilter _searchFilter;
   SortListModel _sortModel;
+  MultiSelection _selModel;
   SongColumnView _songColumnView;
   Button _queueSongsButton;
-
-  LibraryArtist[] _filterArtists; // Artists to filter by
-  LibraryAlbum[] _filterAlbums; // Albums to filter by
+  Button _selectionClearBtn;
+  string[] _filterArtists; // Artist names to filter by
+  string[] _filterAlbums; // Album names to filter by
 }

@@ -5,8 +5,6 @@ class library_item;
 import gobject.object;
 import gobject.types : GTypeEnum;
 
-enum UnknownName = "<Unknown>"; /// Name used for unknown artist or album names
-
 /// An base class for library items (artists, albums and songs)
 class LibraryItem : ObjectWrap
 {

@@ -2,6 +2,7 @@ module library_song;
 
 import std.conv : to;
 import std.exception : ifThrown;
+import std.string : strip;
 
 import ddbc : PreparedStatement, ResultSet;
 import gdk.texture;
@@ -82,16 +83,16 @@ class LibrarySong : LibraryItem, PropIface
 
     auto song = new LibrarySong;
     song._props.filename = filename;
-    song._props.title = tagFile.title;
-    song._props.artist = tagFile.artist;
-    song._props.album = tagFile.album;
-    song._props.genre = tagFile.genre;
+    song._props.title = tagFile.title.strip;
+    song._props.artist = tagFile.artist.strip;
+    song._props.album = tagFile.album.strip;
+    song._props.genre = tagFile.genre.strip;
     song._props.year = tagFile.year;
     song._props.track = tagFile.track;
     song._props.length = tagFile.length;
 
     auto discNumberVals = tagFile.getProp("DISCNUMBER");
-    song._props.disc = discNumberVals.length > 0 ? discNumberVals[0].to!uint.ifThrown(0) : 0;
+    song._props.disc = discNumberVals.length > 0 ? discNumberVals[0].strip.to!uint.ifThrown(0) : 0; // FIXME - Seen this in the form of "N / TOTAL"
 
     song.validate;
     return song;

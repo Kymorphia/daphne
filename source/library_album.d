@@ -15,7 +15,7 @@ class LibraryAlbum : LibraryItem
 
   override @property string name() { return _name; }
 
-  LibraryArtist artist; // Artist of the album
+  LibraryArtist artist; // Artist of the album, Library.variousArtists for various artists album, or Library.unknownArtist if artist is unknown
   LibrarySong[] songs; // Songs sorted by track number followed by filename
   uint year; // Album year (aggregate from songs), 0 if not set, just gets first valid year at the moment
   uint songCount; // Count of album songs

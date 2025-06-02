@@ -25,6 +25,8 @@ import prop_iface;
 import signal;
 
 enum LibraryDatabaseFile = "daphne-library.db"; /// Library file name
+enum UnknownName = "<Unknown>"; /// Name used for unknown artist or album names
+enum VariousArtists = "<Various Artists>"; /// Artist name used for albums with various artists
 
 /// Song library object
 class Library
@@ -36,7 +38,15 @@ class Library
   this(Daphne daphne)
   {
     _daphne = daphne;
+
     unknownArtist = new LibraryArtist(tr!UnknownName);
+    variousArtists = new LibraryArtist(tr!VariousArtists);
+    unknownAlbum = new LibraryAlbum(tr!UnknownName, unknownArtist);
+
+    artists[tr!UnknownName] = unknownArtist;
+    artists[tr!VariousArtists] = variousArtists;
+    albums[tr!UnknownName] = unknownAlbum;
+
     _extFilter = defaultExtensions.dup;
   }
 
@@ -247,41 +257,33 @@ class Library
     songIds[song.id] = song;
 
     auto artist = song.artist.length > 0 ? artists.require(song.artist, new LibraryArtist(song.artist)) : unknownArtist;
-    auto album = song.album.length > 0 ? artist.albums.require(song.album, new LibraryAlbum(song.album, artist))
-      : artist.unknownAlbum;
+    auto album = song.album.length > 0 ? albums.require(song.album, new LibraryAlbum(song.album, artist)) : unknownAlbum;
 
-    bool songSortFunc(LibrarySong a, LibrarySong b) // Sort album songs by track number, showing songs with track numbers first, falling back to sorting by filename
+    if (album != unknownAlbum && album.artist != variousArtists && album.artist !is artist) // Detect various artist albums (or multiple albums with different artists)
     {
-      auto aTrack = a.track > 0 ? a.track : uint.max;
-      auto bTrack = b.track > 0 ? b.track : uint.max;
-      return aTrack < bTrack || (aTrack == bTrack && a.filename.baseName < b.filename.baseName);
+      album.artist = variousArtists;
+      variousArtists.albums[song.album] = album;
+      variousArtists.songCount += album.songCount; // Add album songs to various artists song count
     }
 
-    if (album != artist.unknownAlbum) // If not unknown artist, use normal sorting function
-    {
-      auto sortedSongs = assumeSorted!(songSortFunc)(album.songs);
-      auto index = sortedSongs.lowerBound(song).length;
-      album.songs.insertInPlace(index, song);
-
-      if (album.year == 0 && song.year != 0)
-        album.year = song.year;
-    }
-    else
-    {
-      auto sortedSongs = assumeSorted!((a, b) => a.title < b.title)(album.songs); // Sort unknown album songs by title
-      auto index = sortedSongs.lowerBound(song).length;
-      album.songs.insertInPlace(index, song);
-    }
+    if (album != unknownAlbum && album.year == 0 && song.year != 0)
+      album.year = song.year;
 
     song.libAlbum = album;
-
+    album.songs ~= song; // Append song to album songs list
     artist.songCount++;
     album.songCount++;
 
-    if (artist != unknownArtist && artist.songCount == 2) // Don't consider an Artist object active until at least 2 songs
+    if (album.artist == variousArtists) // Songs on various artist albums increment variousArtists.songCount
+      variousArtists.songCount++;
+
+    if (album != unknownAlbum && album.songCount == 1) // If this is a new album, add it to the artist's albums map
+      artist.albums[song.album] = album;
+
+    if (artist != unknownArtist && artist.songCount == 1)
       newArtist.emit(artist);
 
-    if (album != artist.unknownAlbum && album.songCount == 2) // Don't consider an Album object active until at least 2 songs
+    if (album != unknownAlbum && album.songCount == 1)
       newAlbum.emit(album);
 
     newSong.emit(song);
@@ -295,8 +297,13 @@ class Library
 
   LibrarySong[string] songFiles; /// Map of filenames to Song objects
   LibrarySong[long] songIds; /// Map of song IDs to Song objects
-  LibraryArtist unknownArtist; /// Unknown artist object
   LibraryArtist[string] artists; /// Map of artist names to LibraryArtist object
+  LibraryAlbum[string] albums; /// List of albums by name (FIXME - What about clashes?)
+
+  LibraryArtist unknownArtist; /// Unknown artist object
+  LibraryAlbum unknownAlbum; /// Unknown album object
+  LibraryArtist variousArtists; /// Artist object used with multi-artist albums
+
   bool unhandledIndexerRequest; /// Set to true if runIndexerThread() is called when it is already running
 
 private:

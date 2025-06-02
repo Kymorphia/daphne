@@ -3,6 +3,7 @@ module artist_view;
 import std.algorithm : canFind, endsWith, map, sort, startsWith;
 import std.array : array;
 import std.conv : to;
+import std.format : format;
 import std.string : icmp, toLower;
 
 import gettext;
@@ -14,6 +15,7 @@ import gobject.value;
 import gtk.bitset;
 import gtk.bitset_iter;
 import gtk.box;
+import gtk.button;
 import gtk.column_view;
 import gtk.column_view_column;
 import gtk.custom_filter;
@@ -27,10 +29,11 @@ import gtk.search_entry;
 import gtk.selection_model;
 import gtk.signal_list_item_factory;
 import gtk.sort_list_model;
-import gtk.text;
+import gtk.toggle_button;
 import gtk.types : Align, FilterChange, Orientation, SortType;
 
 import daphne;
+import edit_field;
 import library;
 import signal;
 
@@ -42,10 +45,31 @@ class ArtistView : Box
     super(Orientation.Vertical, 0);
     _daphne = daphne;
 
+    auto hbox = new Box(Orientation.Horizontal, 0);
+    append(hbox);
+
     _searchEntry = new SearchEntry;
+    _searchEntry.hexpand = true;
     _searchEntry.connectSearchChanged(&onSearchEntryChanged);
     _searchEntry.searchDelay = 500;
-    append(_searchEntry);
+    hbox.append(_searchEntry);
+
+    _selectionClearBtn = Button.newWithLabel("");
+    _selectionClearBtn.visible = false;
+    hbox.append(_selectionClearBtn);
+
+    _selectionClearBtn.connectClicked(() {
+      clearSelection;
+    });
+
+    auto showSingleToggle = new ToggleButton;
+    showSingleToggle.setChild(new Label("1"));
+    hbox.append(showSingleToggle);
+
+    showSingleToggle.connectToggled(() {
+      _showArtistsWithSingles = showSingleToggle.active;
+      _searchFilter.changed(_showArtistsWithSingles ? FilterChange.LessStrict : FilterChange.MoreStrict);
+    });
 
     _scrolledWindow = new ScrolledWindow;
     _scrolledWindow.setVexpand(true);
@@ -77,9 +101,22 @@ class ArtistView : Box
     col.resizable = true;
     _columnView.appendColumn(col);
 
-    col.setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj) =>
-      icmp((cast(LibraryArtist)aObj).name, (cast(LibraryArtist)bObj).name)
-    ));
+    col.setSorter(new CustomSorter((ObjectWrap aObj, ObjectWrap bObj) {
+      if (aObj !is _daphne.library.unknownArtist && aObj !is _daphne.library.variousArtists
+          && bObj !is _daphne.library.unknownArtist && bObj !is _daphne.library.variousArtists)
+        return icmp((cast(LibraryArtist)aObj).name, (cast(LibraryArtist)bObj).name);
+
+      if (aObj is bObj)
+        return 0;
+      else if (aObj is _daphne.library.unknownArtist)
+        return -1;
+      else if (bObj is _daphne.library.unknownArtist)
+        return 1;
+      else if (aObj is _daphne.library.variousArtists)
+        return -1;
+      else // bObj is variousArtists
+        return 1;
+    }));
 
     _columnView.sortByColumn(col, SortType.Ascending);
 
@@ -119,7 +156,7 @@ class ArtistView : Box
   private bool searchFilterFunc(ObjectWrap item)
   {
     auto artist = cast(LibraryArtist)item;
-    return artist.songCount > 1 // Filter out songs with only 1 song
+    return (_showArtistsWithSingles || artist.songCount > 1 || artist is _daphne.library.variousArtists) // Filter out artists with only one song if toggle button is not active, always show various artists though
       && (_searchString.length == 0 || (cast(LibraryItem)item).name.toLower.canFind(_searchString));
   }
 
@@ -138,32 +175,31 @@ class ArtistView : Box
       while (iter.next(position));
     }
 
+    if (selection.length > 0)
+    {
+      _selectionClearBtn.label = format(tr!"%d selected", selection.length);
+      _selectionClearBtn.visible = true;
+    }
+    else
+      _selectionClearBtn.visible = false;
+
     selectionChanged.emit(selection);
   }
 
   private void onArtistSetup(ListItem listItem)
   {
-    auto text = new Text;
-    text.hexpand = true;
-    listItem.setChild(text);
+    listItem.setChild(new EditField);
   }
 
   private void onArtistBind(ListItem listItem)
   {
-    auto artist = cast(LibraryArtist)listItem.getItem;
-    auto text = cast(Text)listItem.getChild;
-    text.getBuffer.setText(artist.name, -1);
-    text.setEditable(false);
-    text.setCanFocus(false);
-    text.setCanTarget(false);
-    text.setFocusOnClick(false);
+    (cast(EditField)listItem.getChild).content = (cast(LibraryArtist)listItem.getItem).name;
   }
 
   private void onSongCountSetup(ListItem listItem)
   {
     auto label = new Label;
     label.halign = Align.Start;
-    label.hexpand = true;
     listItem.setChild(label);
   }
 
@@ -180,6 +216,12 @@ class ArtistView : Box
     _listModel.append(artist);
   }
 
+  /// Clear the selection
+  void clearSelection()
+  {
+    _selModel.unselectAll;
+  }
+
   mixin Signal!(LibraryArtist[]) selectionChanged; /// Selected artists changed signal
 
   LibraryArtist[] selection;
@@ -194,4 +236,6 @@ private:
   MultiSelection _selModel;
   CustomFilter _searchFilter;
   ColumnView _columnView;
+  Button _selectionClearBtn;
+  bool _showArtistsWithSingles;
 }

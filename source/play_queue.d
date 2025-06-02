@@ -10,6 +10,7 @@ import std.range : retro;
 import std.string : join, toLower;
 
 import ddbc : createConnection, Connection;
+import gettext;
 import gio.list_store;
 import glib.variant : GLibVariant = Variant;
 import gobject.object;
@@ -58,6 +59,7 @@ class PlayQueue : Box, PropIface
     hbox.append(_searchEntry);
 
     auto shuffleButton = Button.newFromIconName("media-playlist-shuffle");
+    shuffleButton.tooltipText = tr!"Shuffle items in queue";
     shuffleButton.hexpand = false;
     hbox.append(shuffleButton);
 
