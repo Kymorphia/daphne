@@ -5,10 +5,12 @@ import daphne_includes;
 import library;
 import artist_view;
 import album_view;
+import history_view;
 import mpris;
 import player;
 import play_queue;
 import prefs;
+import prop_iface;
 import signal;
 import song_display;
 import song_view;
@@ -145,7 +147,7 @@ MIT license`;
 
     // Add a monospace font class
     auto provider = new CssProvider;
-    provider.loadFromString(".mono-class { font-family: monospace; }");
+    provider.loadFromString(".mono { font-family: monospace; }");
     StyleContext.addProviderForDisplay(Display.getDefault, provider, STYLE_PROVIDER_PRIORITY_APPLICATION);
 
 		mainWindow = new ApplicationWindow(this);
@@ -202,9 +204,16 @@ MIT license`;
     albumView.marginEnd = 2;
     hPaned2.setStartChild(albumView);
 
+    auto notebook = new Notebook;
+    notebook.marginStart = 2;
+    notebook.tabPos = PositionType.Bottom;
+    hPaned2.setEndChild(notebook);
+
     songView = new SongView(this);
-    songView.marginStart = 2;
-    hPaned2.setEndChild(songView);
+    notebook.appendPage(songView, new Label(tr!"Songs"));
+
+    history = new HistoryView(this);
+    notebook.appendPage(history, new Label(tr!"History"));
 
     auto hpanedPlayer = new Paned(Orientation.Horizontal);
     hpanedPlayer.resizeStartChild = false;
@@ -233,6 +242,14 @@ MIT license`;
       return;
     }
 
+    try
+      history.open;
+    catch (Exception e)
+    {
+      abort("Error loading history database: " ~ e.msg);
+      return;
+    }
+
     artistView.selectionChanged.connect((LibraryArtist[] selectedArtists) {
       albumView.filterArtists(selectedArtists);
       songView.filterArtists(selectedArtists);
@@ -242,12 +259,10 @@ MIT license`;
       songView.setAlbums(selectedAlbums);
     });
 
-    songView.queueSongs.connect((LibrarySong[] songs) {
-      playQueue.add(songs);
-    });
-
-    playQueue.currentSong.connect((LibrarySong song) {
-      songDisplay.song = song;
+    playQueue.propChanged.connect((PropIface propObj, string propName, StdVariant val, StdVariant oldVal) {
+      if (propName == "currentSong")
+        if (auto song = val.get!LibrarySong.ifThrown(null))
+          songDisplay.song = song;
     });
 
     library.newArtist.connect((LibraryArtist artist) {
@@ -459,6 +474,7 @@ MIT license`;
   ArtistView artistView;
   AlbumView albumView;
   SongView songView;
+  HistoryView history;
   SongDisplay songDisplay;
   PlayQueue playQueue;
   Player player;

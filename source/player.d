@@ -39,7 +39,7 @@ final class Player : Box, PropIface
 
     _timePlayedLabel = new Label;
     _timePlayedLabel.widthChars = TimeWidthChars;
-    _timePlayedLabel.addCssClass("mono-class");
+    _timePlayedLabel.addCssClass("mono");
     append(_timePlayedLabel);
 
     _songPosScale = new Scale(Orientation.Horizontal);
@@ -48,7 +48,7 @@ final class Player : Box, PropIface
 
     _timeRemainingLabel = new Label;
     _timeRemainingLabel.widthChars = TimeWidthChars;
-    _timeRemainingLabel.addCssClass("mono-class");
+    _timeRemainingLabel.addCssClass("mono");
     append(_timeRemainingLabel);
 
     _volumeScale = new Scale(Orientation.Horizontal);
@@ -93,6 +93,11 @@ final class Player : Box, PropIface
     _daphne.playQueue.propChanged.connect((PropIface propObj, string propName, StdVariant val, StdVariant oldVal) {
       if (propName == "songCount" && (val.get!uint == 0) != (oldVal.get!uint == 0)) // Only update state when changing queue song count from 0 to nonzero or nonzero to 0
         updateState;
+      else if (propName == "currentSong" && _state == State.Playing) // If current queue song changes while playing (deleted), stop and play
+      {
+        stop;
+        play;
+      }
     });
 
     timeoutAdd(PRIORITY_DEFAULT, RefreshRateMsecs, &refreshPosition);
@@ -148,7 +153,7 @@ final class Player : Box, PropIface
   private void updateVolume() // Volume property update method
   {
     _props.volume = clamp(_props.volume, 0.0, 1.0);
-    _playbin.setProperty("volume", _props.volume);
+    _playbin.setProperty("volume", _props.volume ^^ 3);
     _volumeScale.setValue(_props.volume);
   }
 

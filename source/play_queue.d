@@ -7,7 +7,7 @@ import library;
 import prop_iface;
 import rating;
 import song_column_view;
-import utils : executeSql;
+import utils : executeSql, getSelectionRanges;
 
 enum PlayQueueDatabaseFile = "daphne-queue.db"; /// Play queue database filename
 
@@ -44,10 +44,9 @@ class PlayQueue : Box, PropIface
     _scrolledWindow.setChild(_songColumnView);
 
     _selModel = cast(MultiSelection)_songColumnView.model;
-    _listModel = cast(ListStore)_selModel.model;
 
     _searchFilter = new CustomFilter(&searchFilterFunc);
-    auto filterListModel = new FilterListModel(_listModel, _searchFilter); // Used to filter on search text
+    auto filterListModel = new FilterListModel(_selModel.model, _searchFilter); // Used to filter on search text
     _selModel.model = filterListModel;
 
     auto shortCtrl = new ShortcutController;
@@ -61,57 +60,28 @@ class PlayQueue : Box, PropIface
   struct PropDef
   {
     @Desc("Count of songs in queue") uint songCount;
+    @Desc("Current song at the top of the queue") LibrarySong currentSong;
   }
 
   mixin(definePropIface!(PropDef, true));
 
   private bool onDeleteKeyCallback(Widget widg, GLibVariant args)
   {
-    uint[2][] ranges;
-    BitsetIter iter;
-    uint position;
-
-    if (BitsetIter.initFirst(iter, _selModel.getSelection, position)) // Construct ranges of items to remove
-    {
-      uint[2] curRange = [position, position];
-
-      while (iter.next(position))
-      {
-        if (position != curRange[1] + 1)
-        {
-          ranges ~= curRange;
-          curRange = [position, position];
-        }
-        else
-          curRange[1] = position;
-      }
-
-      ranges ~= curRange; // Add last range
-    }
-
+    auto ranges = getSelectionRanges(_selModel);
     long[] qIds;
 
     // Loop in reverse so that positions don't change as items are removed
     foreach (r; ranges.retro)
-    {
-      _listModel.splice(r[0], r[1] - r[0] + 1, []);
-      qIds ~= _songs[r[0] .. r[1] + 1].map!(x => x.queueId).array;
+    { // Get queue IDs for the range of items
+      qIds ~= _songColumnView.getItems(iota(r[0], r[1] + 1)).map!(x => x.id).array;
+      _songColumnView.splice(r[0], r[1] - r[0] + 1, []);
     }
 
-    // Construct new list by appending the ranges of items not being removed
-    uint lastPos = 0;
-    SongColumnViewItem[] newSongs;
-    foreach (r; ranges)
-    {
-      newSongs ~= _songs[lastPos .. r[0]];
-      lastPos = r[1] + 1;
-    }
-
-    _songs = newSongs ~ _songs[lastPos .. $];
-    songCount = cast(uint)_songs.length;
+    songCount = _songColumnView.getItemCount;
+    currentSong = _songColumnView.getItemCount > 0 ? _songColumnView.getItem(0).song : null;
 
     try
-      _dbConn.executeSql("DELETE FROM queue WHERE id IN (" ~ qIds.map!(x => x.to!string).join(", ") ~ ")");
+      dbConn.executeSql("DELETE FROM queue WHERE id IN (" ~ qIds.map!(x => x.to!string).join(", ") ~ ")");
     catch (Exception e)
       error("Queue DB delete error: " ~ e.msg);
 
@@ -137,23 +107,22 @@ class PlayQueue : Box, PropIface
 
   private void onShuffleButtonClicked()
   {
-    if (isPlaying && _songs.length <= 1)
+    auto startIndex = isPlaying ? 1 : 0;
+
+    if (_props.songCount <= startIndex)
       return;
 
-    auto startIndex = isPlaying ? 1 : 0;
-    _songs[startIndex .. $] = _songs[startIndex .. $].randomShuffle.array; // Cannot shuffle in place, so create a new array then replace it
-    _listModel.removeAll;
-    _listModel.splice(0, 0, cast(ObjectWrap[])_songs);
+    auto shuffledSongs = _songColumnView.getItems(iota(startIndex, _props.songCount)).array.randomShuffle.array;
+    _songColumnView.splice(startIndex, _props.songCount - startIndex, shuffledSongs);
 
-    _nextQueueId = 1;
-    foreach (i, song; _songs) // Re-sequence the queue IDs
-      song.queueId = _nextQueueId++;
+    _songColumnView.getItems.enumerate(1).each!((t) { t[1].id = t[0]; }); // Re-sequence queue IDs
+    _nextQueueId = _props.songCount + 1;
 
     try
     {
-      _dbConn.executeSql("DELETE FROM queue");
-      _dbConn.executeSql("INSERT INTO queue (id, song_id) VALUES "
-        ~ _songs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.song.id.to!string ~ ")").join(", "));
+      dbConn.executeSql("DELETE FROM queue");
+      dbConn.executeSql("INSERT INTO queue (id, song_id) VALUES "
+        ~ _songColumnView.getItems.map!(x => "(" ~ x.id.to!string ~ ", " ~ x.song.id.to!string ~ ")").join(", "));
     }
     catch (Exception e)
       error("Queue DB shuffle error: " ~ e.msg);
@@ -170,22 +139,21 @@ class PlayQueue : Box, PropIface
   void open()
   {
     try
-      _dbConn = createConnection("sqlite:" ~ buildPath(_daphne.appDir, PlayQueueDatabaseFile));
+      dbConn = createConnection("sqlite:" ~ buildPath(_daphne.appDir, PlayQueueDatabaseFile));
     catch (Exception e)
       throw new Exception("DB connect error: " ~ e.msg);
 
-    auto stmt = _dbConn.createStatement;
+    auto stmt = dbConn.createStatement;
     scope(exit) stmt.close;
 
     try
-    {
       stmt.executeUpdate("CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY, song_id int)");
-      stmt.executeUpdate("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY, song_id int, timestamp int)");
-    }
     catch (Exception e)
       throw new Exception("Queue DB table create error: " ~ e.msg);
 
-    try // Load the Queue table
+    SongColumnViewItem[] items;
+
+    try // Load the queue table
     {
       auto rs = stmt.executeQuery("SELECT id, song_id FROM queue ORDER BY id");
 
@@ -194,8 +162,7 @@ class PlayQueue : Box, PropIface
         if (auto song = _daphne.library.songIds.get(rs.getLong(2), null))
         {
           auto id = rs.getLong(2);
-          _songs ~= new SongColumnViewItem(song);
-          _songs[$ - 1].queueId = rs.getLong(1);
+          items ~= new SongColumnViewItem(song, rs.getLong(1));
 
           if (id >= _nextQueueId)
             _nextQueueId = id + 1;
@@ -205,17 +172,17 @@ class PlayQueue : Box, PropIface
     catch (Exception e)
       throw new Exception("Queue DB load error: " ~ e.msg);
 
-    _listModel.splice(0, 0, cast(ObjectWrap[])_songs);
-    songCount = cast(uint)_songs.length;
+    _songColumnView.splice(0, 0, items);
+    songCount = cast(uint)items.length;
   }
 
   /// Close queue database
   void close()
   {
-    if (_dbConn)
+    if (dbConn)
     {
-      _dbConn.close;
-      _dbConn = null;
+      dbConn.close;
+      dbConn = null;
     }
   }
 
@@ -225,11 +192,11 @@ class PlayQueue : Box, PropIface
    */
   LibrarySong start()
   {
-    if (_songs.length > 0)
+    if (auto item = _songColumnView.getItem(0))
     {
       isPlaying = true;
-      currentSong.emit(_songs[0].song);
-      return _songs[0].song;
+      currentSong = item.song;
+      return item.song;
     }
     else
       return null;
@@ -267,27 +234,20 @@ class PlayQueue : Box, PropIface
     if (pos == 0 && isPlaying)
       pos = 1;
 
-    if (pos < 0 || pos > _songs.length) // Append if negative pos or pos off the end
-      pos = cast(int)_songs.length;
+    if (pos < 0 || pos > _props.songCount) // Append if negative pos or pos off the end
+      pos = cast(int)_props.songCount;
 
-    SongColumnViewItem[] qSongs;
+    auto qSongs = songs.map!(x => new SongColumnViewItem(x, _nextQueueId++)).array;
 
-    foreach (song; songs)
-    {
-      qSongs ~= new SongColumnViewItem(song);
-      qSongs[$ - 1].queueId = _nextQueueId++;
-    }
-
-    _listModel.splice(pos, 0, cast(ObjectWrap[])qSongs);
-    _songs.insertInPlace(pos, qSongs);
+    _songColumnView.splice(pos, 0, qSongs);
 
     try
-      _dbConn.executeSql("INSERT INTO queue (id, song_id) VALUES "
-        ~ qSongs.map!(x => "(" ~ x.queueId.to!string ~ ", " ~ x.song.id.to!string ~ ")").join(", "));
+      dbConn.executeSql("INSERT INTO queue (id, song_id) VALUES "
+        ~ qSongs.map!(x => "(" ~ x.id.to!string ~ ", " ~ x.song.id.to!string ~ ")").join(", "));
     catch (Exception e)
       error("Queue DB insert error: " ~ e.msg);
 
-    songCount = cast(uint)_songs.length;
+    songCount = _props.songCount + cast(uint)songs.length;
   }
 
   /**
@@ -295,8 +255,11 @@ class PlayQueue : Box, PropIface
    */
   void next()
   {
-    if (_songs.length > 0)
+    if (auto item = _songColumnView.getItem(0))
+    {
+      _daphne.history.addSong(item.song);
       remove(0);
+    }
   }
 
   /**
@@ -304,7 +267,11 @@ class PlayQueue : Box, PropIface
    */
   void prev()
   {
-    // FIXME
+    if (auto song = _daphne.history.pop)
+    {
+      stop;
+      insert([song], 0);
+    }
   }
 
   /**
@@ -312,41 +279,36 @@ class PlayQueue : Box, PropIface
    * Params:
    *   pos = Position of song to remove
    */
-  void remove(int pos)
+  void remove(uint pos)
   {
-    if (pos < 0 || pos >= _songs.length)
-      return;
-
-    auto qSong = _songs[pos];
-    _dbConn.executeSql("DELETE FROM queue WHERE id=" ~ qSong.queueId.to!string);
-
-    _listModel.remove(pos);
-    _songs = _songs[0 .. pos] ~ _songs[pos + 1 .. $];
-
-    if (pos == 0) // If the current song was removed, update it
+    if (auto item = _songColumnView.getItem(pos))
     {
-      currentSong.emit(_songs.length > 0 ? _songs[0].song : null);
+      dbConn.executeSql("DELETE FROM queue WHERE id=" ~ item.id.to!string);
 
-      if (_songs.length == 0)
-        _nextQueueId = 1; // Reset next queue ID when empty
+      _songColumnView.remove(pos);
+
+      if (pos == 0) // If the current song was removed, update it
+      {
+        currentSong = _props.songCount > 1 ? _songColumnView.getItem(0).song : null;
+
+        if (_props.songCount == 1)
+          _nextQueueId = 1; // Reset next queue ID when empty
+      }
+
+      songCount = _props.songCount - 1;
     }
-
-    songCount = cast(uint)_songs.length;
   }
 
-  mixin Signal!(LibrarySong) currentSong;
+  Connection dbConn;
 
 private:
   Daphne _daphne;
-  Connection _dbConn;
-  SongColumnViewItem[] _songs;
   long _nextQueueId = 1;
   SearchEntry _searchEntry;
   ulong _searchChangedHandler;
   string _searchString;
   ScrolledWindow _scrolledWindow;
   MultiSelection _selModel;
-  ListStore _listModel;
   CustomFilter _searchFilter;
   SongColumnView _songColumnView;
   bool isPlaying;

@@ -31,3 +31,36 @@ string formatSongTime(uint timeSecs, uint durationSecs = 0)
   else
     return format("%u:%02u:%02u", timeSecs / 3600, (timeSecs % 3600) / 60, timeSecs % 60);
 }
+
+/**
+ * Get number ranges for selected items in a SelectionModel.
+ * Params:
+ *   selModel = The selection model
+ * Returns: An array of arrays with 2 uint values for the start and end (inclusive) values of the range
+ */
+uint[2][] getSelectionRanges(SelectionModel selModel)
+{
+  uint[2][] ranges;
+  BitsetIter iter;
+  uint position;
+
+  if (BitsetIter.initFirst(iter, selModel.getSelection, position)) // Construct ranges of items to remove
+  {
+    uint[2] curRange = [position, position];
+
+    while (iter.next(position))
+    {
+      if (position != curRange[1] + 1)
+      {
+        ranges ~= curRange;
+        curRange = [position, position];
+      }
+      else
+        curRange[1] = position;
+    }
+
+    ranges ~= curRange; // Add last range
+  }
+
+  return ranges;
+}

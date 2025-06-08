@@ -276,13 +276,111 @@ class SongColumnView : ColumnView
   }
 
   /**
-   * Add a song to the view.
+   * Get SongColumnViewItem range for a range of item indexes.
+   * Params:
+   *   indexes = Range of uint indexes
+   *   
    */
-  void addSong(LibrarySong song)
+  auto getItems(R)(R indexes)
+    if (isInputRange!R && isIntegral!(ElementType!R))
   {
-    auto item = new SongColumnViewItem(song);
-    _songItems[song] = item;
+    return indexes.map!(n => cast(SongColumnViewItem)_listModel.getItem(n));
+  }
+
+  /**
+   * Get a range of all items in a song view.
+   * Returns: Range of SongColumnViewItem objects.
+   */
+  auto getItems()()
+  {
+    return getItems(iota(0, _listModel.getNItems));
+  }
+
+  /**
+   * Get an item at a given position.
+   * Params:
+   *   position = Position of item
+   * Returns: The item at the given position or null if invalid position
+   */
+  SongColumnViewItem getItem(uint position)
+  {
+    return cast(SongColumnViewItem)_listModel.getItem(position);
+  }
+
+  /**
+   * Get number of items in the song view.
+   * Returns: Count of items
+   */
+  uint getItemCount()
+  {
+    return _listModel.getNItems;
+  }
+
+  /**
+   * Add an item to the view.
+   */
+  void add(SongColumnViewItem item)
+  {
+    _songItems[item.song] = item;
     _listModel.append(item);
+  }
+
+  /**
+   * Pop the song off of the end of the view. Removes it from the view and returns it.
+   * Returns: Song popped off of the end of the view or null if none
+   */
+  SongColumnViewItem pop()
+  {
+    auto nItems = _listModel.getNItems;
+
+    if (nItems > 0)
+    {
+      auto item = cast(SongColumnViewItem)_listModel.getItem(nItems - 1);
+      _listModel.remove(nItems - 1);
+      return item;
+    }
+
+    return null;
+  }
+
+  /**
+   * Add and/or remove items from the song view.
+   * Params:
+   *   position = Position in the list model to add/remove
+   *   nRemovals = Number of items to remove
+   *   additions = Items to add
+   */
+  void splice(uint position, uint nRemovals, SongColumnViewItem[] additions)
+  {
+    foreach (pos; position .. position + nRemovals)
+      if (auto item = cast(SongColumnViewItem)_listModel.getItem(pos))
+        _songItems.remove(item.song);
+
+    foreach(item; additions)
+      _songItems[item.song] = item;
+
+    _listModel.splice(position, nRemovals, cast(ObjectWrap[])additions);
+  }
+
+  /**
+   * Remove an item from a song view.
+   * Params:
+   *   position = The position to remove
+   */
+  void remove(uint position)
+  {
+    if (auto item = cast(SongColumnViewItem)_listModel.getItem(position))
+    {
+      _songItems.remove(item.song);
+      _listModel.remove(position);
+    }
+  }
+
+  /// Remove all items from a song view.
+  void removeAll()
+  {
+    _songItems.clear;
+    _listModel.removeAll;
   }
 
   mixin Signal!(LibrarySong[]) selectionChanged; /// Selected songs changed signal
@@ -306,7 +404,6 @@ private:
   MultiSelection _selModel;
   ListStore _listModel;
   propChangedGlobal.SignalHook* _globalPropChangedHook; // Global property change signal hook
-
   SongColumnViewItem[LibrarySong] _songItems; // Map of LibrarySong objects to SongColumnViewItem
 }
 
@@ -319,10 +416,17 @@ class SongColumnViewItem : ObjectWrap
     this.song = song;
   }
 
+  this(LibrarySong song, long id)
+  {
+    super(GTypeEnum.Object);
+    this.song = song;
+    this.id = id;
+  }
+
   mixin(objectMixin);
 
   LibrarySong song; // The song
-  long queueId; // Queue ID (use by PlayQueue only)
+  long id; // Used by queue and history view
   EditField albumField;
   EditField artistField;
   Label lengthLabel;

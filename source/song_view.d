@@ -40,7 +40,7 @@ class SongView : Box
     _queueSongsButton.tooltipText = tr!"Add songs to queue";
     hbox.append(_queueSongsButton);
 
-    _queueSongsButton.connectClicked(&onAddSongsButtonClicked);
+    _queueSongsButton.connectClicked(&onQueueSongsButtonClicked);
 
     _scrolledWindow = new ScrolledWindow;
     _scrolledWindow.setVexpand(true);
@@ -53,8 +53,7 @@ class SongView : Box
     _selModel = cast(MultiSelection)_songColumnView.model;
     auto listModel = cast(ListStore)_selModel.model;
 
-    foreach (song; _daphne.library.songFiles.values)
-      _songColumnView.addSong(song);
+    _songColumnView.splice(0, 0, _daphne.library.songFiles.values.map!(song => new SongColumnViewItem(song)).array);
 
     _searchFilter = new CustomFilter(&searchFilterFunc);
     auto filterListModel = new FilterListModel(listModel, _searchFilter); // Used to filter on search text
@@ -79,7 +78,7 @@ class SongView : Box
     return _songColumnView.selection;
   }
 
-  private void onAddSongsButtonClicked() // Callback for when queue songs button is clicked
+  private void onQueueSongsButtonClicked() // Callback for when queue songs button is clicked
   {
     if (selection.length == 0) // If no items are selected queue all of them
     {
@@ -88,10 +87,10 @@ class SongView : Box
       foreach (i; 0 .. _sortModel.getNItems)
         songs ~= (cast(SongColumnViewItem)_sortModel.getItem(cast(uint)i)).song;
 
-      queueSongs.emit(songs);
+      _daphne.playQueue.add(songs);
     }
     else
-      queueSongs.emit(selection); // Add selected songs
+      _daphne.playQueue.add(selection); // Add selected songs
   }
 
   private void onSearchEntryChanged()
@@ -149,7 +148,7 @@ class SongView : Box
    */
   void addSong(LibrarySong song)
   {
-    _songColumnView.addSong(song);
+    _songColumnView.add(new SongColumnViewItem(song));
   }
 
   /// Clear the selection
@@ -159,7 +158,6 @@ class SongView : Box
   }
 
   mixin Signal!(LibrarySong[]) selectionChanged; /// Selected songs changed signal
-  mixin Signal!(LibrarySong[]) queueSongs; /// Queue songs action callback
 
 private:
   Daphne _daphne;
