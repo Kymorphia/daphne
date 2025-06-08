@@ -1,40 +1,6 @@
 module album_view;
 
-import std.algorithm : canFind, endsWith, map, sort, startsWith;
-import std.array : array;
-import std.conv : to;
-import std.format : format;
-import std.string : icmp, toLower;
-
-import gettext;
-import gio.list_model;
-import gio.list_store;
-import glib.global : timeoutAdd;
-import glib.source;
-import glib.types : PRIORITY_DEFAULT, SOURCE_REMOVE;
-import gobject.object;
-import gobject.types : GTypeEnum;
-import gobject.value;
-import gtk.bitset;
-import gtk.bitset_iter;
-import gtk.box;
-import gtk.button;
-import gtk.column_view;
-import gtk.column_view_column;
-import gtk.column_view_sorter;
-import gtk.custom_filter;
-import gtk.custom_sorter;
-import gtk.filter_list_model;
-import gtk.label;
-import gtk.list_item;
-import gtk.multi_selection;
-import gtk.scrolled_window;
-import gtk.search_entry;
-import gtk.selection_model;
-import gtk.signal_list_item_factory;
-import gtk.sort_list_model;
-import gtk.toggle_button;
-import gtk.types : Align, FilterChange, Orientation, SortType;
+import daphne_includes;
 
 import daphne;
 import edit_field;

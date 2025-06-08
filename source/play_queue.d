@@ -1,36 +1,6 @@
 module play_queue;
 
-import std.algorithm : canFind, endsWith, map, startsWith;
-import std.array : array, insertInPlace;
-import std.conv : to;
-import std.logger;
-import std.path : buildPath;
-import std.random : randomShuffle;
-import std.range : retro;
-import std.string : join, toLower;
-
-import ddbc : createConnection, Connection;
-import gettext;
-import gio.list_store;
-import glib.variant : GLibVariant = Variant;
-import gobject.object;
-import gtk.bitset;
-import gtk.bitset_iter;
-import gtk.box;
-import gtk.button;
-import gtk.callback_action;
-import gtk.custom_filter;
-import gtk.custom_sorter;
-import gtk.filter_list_model;
-import gtk.multi_selection;
-import gtk.scrolled_window;
-import gtk.search_entry;
-import gtk.shortcut;
-import gtk.shortcut_controller;
-import gtk.shortcut_trigger;
-import gtk.sort_list_model;
-import gtk.types : FilterChange, Orientation, ShortcutScope;
-import gtk.widget;
+import daphne_includes;
 
 import daphne;
 import library;

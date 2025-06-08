@@ -5,17 +5,7 @@ public import library_album;
 public import library_artist;
 public import library_song;
 
-import std.algorithm : canFind, map;
-import std.array : assocArray, insertInPlace;
-import std.conv : to;
-import std.file : DirEntry, dirEntries, SpanMode;
-import std.logger;
-import std.path : baseName, buildPath;
-import std.parallelism : Task, task;
-import std.range : assumeSorted, repeat;
-import std.string : icmp, join;
-import std.typecons : tuple;
-import std.variant : Variant;
+import daphne_includes;
 
 import ddbc : createConnection, Connection, PreparedStatement, Statement;
 import gettext;
@@ -81,7 +71,7 @@ class Library
   }
 
   // Called when any PropIface property changes
-  private void onGlobalPropChanged(PropIface propObj, string propName, Variant val, Variant oldVal)
+  private void onGlobalPropChanged(PropIface propObj, string propName, StdVariant val, StdVariant oldVal)
   {
     if (auto song = cast(LibrarySong)propObj)
     {
@@ -236,7 +226,7 @@ class Library
 
     try
     {
-      Variant outIdVal;
+      StdVariant outIdVal;
       ps.executeUpdate(outIdVal);
       song.id = outIdVal.coerce!long;
     }

@@ -1,35 +1,6 @@
 module prefs;
 
-import std.algorithm : map, remove;
-import std.array : array;
-import std.exception : ifThrown;
-import std.file : exists, mkdirRecurse, readText, write;
-import std.json : JSONOptions, JSONValue, parseJSON, toJSON;
-import std.logger;
-import std.path : buildPath;
-
-import gettext;
-import gio.async_result;
-import gio.file;
-import glib.global : getUserConfigDir;
-import gobject.object;
-import gtk.box;
-import gtk.button;
-import gtk.file_dialog;
-import gtk.label;
-import gtk.list_item;
-import gtk.list_view;
-import gtk.paned;
-import gtk.scrolled_window;
-import gtk.signal_list_item_factory;
-import gtk.single_selection;
-import gtk.stack;
-import gtk.stack_sidebar;
-import gtk.string_list;
-import gtk.string_object;
-import gtk.types : INVALID_LIST_POSITION, Orientation;
-import gtk.widget;
-import gtk.window;
+import daphne_includes;
 
 import daphne;
 

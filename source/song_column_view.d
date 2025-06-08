@@ -1,24 +1,6 @@
 module song_column_view;
 
-import std.conv : to;
-import std.string : icmp;
-import std.variant : Variant;
-
-import gettext;
-import gio.list_model;
-import gio.list_store;
-import gobject.object;
-import gobject.types : GTypeEnum;
-import gtk.bitset;
-import gtk.bitset_iter;
-import gtk.column_view;
-import gtk.column_view_column;
-import gtk.custom_sorter;
-import gtk.label;
-import gtk.list_item;
-import gtk.multi_selection;
-import gtk.signal_list_item_factory;
-import gtk.types : FilterChange, Orientation, SortType;
+import daphne_includes;
 
 import edit_field;
 import library : UnknownName;
@@ -169,7 +151,7 @@ class SongColumnView : ColumnView
       item.ratingWidg.value = item.song.rating;
 
       item.ratingWidgChangedHook
-          = item.ratingWidg.propChanged.connect((PropIface obj, string propName, Variant val, Variant oldVal) {
+          = item.ratingWidg.propChanged.connect((PropIface obj, string propName, StdVariant val, StdVariant oldVal) {
         if (propName == "value")
           item.song.rating = val.get!ubyte;
       });
@@ -232,7 +214,7 @@ class SongColumnView : ColumnView
   }
 
   // Callback for global PropIface object property changes
-  private void onGlobalPropChanged(PropIface propObj, string propName, Variant val, Variant oldVal)
+  private void onGlobalPropChanged(PropIface propObj, string propName, StdVariant val, StdVariant oldVal)
   {
     if (auto song = cast(LibrarySong)propObj)
     {

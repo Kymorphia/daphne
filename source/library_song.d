@@ -1,12 +1,7 @@
 module library_song;
 
-import std.conv : to;
-import std.exception : ifThrown;
-import std.string : strip;
+import daphne_includes;
 
-import ddbc : PreparedStatement, ResultSet;
-import gdk.texture;
-import glib.bytes;
 import taglib;
 
 import library_album;

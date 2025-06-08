@@ -1,18 +1,6 @@
 module rating;
 
-import std.algorithm : clamp;
-import std.conv : to;
-
-import cairo.context;
-import cairo.global : patternCreateLinear;
-import cairo.pattern;
-import gdk.types : KEY_Escape, KEY_Left, KEY_Right;
-import gtk.drawing_area;
-import gtk.event_controller_key;
-import gtk.event_controller_motion;
-import gtk.gesture_click;
-import gtk.label;
-import gtk.types : Orientation;
+import daphne_includes;
 
 import prop_iface;
 

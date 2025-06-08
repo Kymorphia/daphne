@@ -1,21 +1,11 @@
 module player;
 
-import std.format : format;
-import std.algorithm : clamp;
+import daphne_includes;
 
-import gettext;
-import glib.global : timeoutAdd;
-import glib.types : PRIORITY_DEFAULT, SOURCE_CONTINUE;
-import gobject.global : signalHandlerBlock, signalHandlerUnblock;
 import gst.element;
 import gst.element_factory;
 import gst.pipeline;
 import gst.types : Format, SeekFlags, State, SECOND, USECOND;
-import gtk.box;
-import gtk.button;
-import gtk.label;
-import gtk.scale;
-import gtk.types : Orientation;
 
 import daphne;
 import library;
@@ -100,7 +90,7 @@ final class Player : Box, PropIface
       setPosition(cast(long)(_songPosScale.getValue * 1_000_000));
     });
 
-    _daphne.playQueue.propChanged.connect((PropIface propObj, string propName, Variant val, Variant oldVal) {
+    _daphne.playQueue.propChanged.connect((PropIface propObj, string propName, StdVariant val, StdVariant oldVal) {
       if (propName == "songCount" && (val.get!uint == 0) != (oldVal.get!uint == 0)) // Only update state when changing queue song count from 0 to nonzero or nonzero to 0
         updateState;
     });

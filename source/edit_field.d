@@ -1,8 +1,6 @@
 module edit_field;
 
-import gtk.label;
-import gtk.types : Align, Justification;
-import pango.types : EllipsizeMode;
+import daphne_includes;
 
 /// A ColumnView field widget which can be used for editing (not yet editable)
 class EditField : Label

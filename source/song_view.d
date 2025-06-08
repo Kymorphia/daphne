@@ -1,24 +1,6 @@
 module song_view;
 
-import std.algorithm : canFind, endsWith, map, startsWith;
-import std.array : array;
-import std.format : format;
-import std.string : icmp, toLower;
-
-import gettext;
-import gio.list_model;
-import gio.list_store;
-import gobject.object;
-import gtk.box;
-import gtk.button;
-import gtk.custom_filter;
-import gtk.custom_sorter;
-import gtk.filter_list_model;
-import gtk.multi_selection;
-import gtk.scrolled_window;
-import gtk.search_entry;
-import gtk.sort_list_model;
-import gtk.types : FilterChange, Orientation;
+import daphne_includes;
 
 import daphne;
 import library;

@@ -1,25 +1,6 @@
 module mpris;
 
-import std.array : array;
-import std.conv : to;
-import std.logger;
-import std.stdio : writeln;
-import std.string : join, startsWith, toUpper;
-import std.typecons : tuple;
-import std.variant : StdVariant = Variant;
-
-import gio.dbus_connection;
-import gio.dbus_node_info;
-import gio.dbus_error;
-import gio.dbus_method_invocation;
-import gio.global : busGetSync, busOwnName;
-import gio.types : BusNameOwnerFlags, BusType;
-import glib.c.types : GError, GVariant;
-import glib.global : idleAdd;
-import glib.main_loop;
-import glib.types : PRIORITY_DEFAULT_IDLE, SOURCE_REMOVE;
-import glib.variant;
-import gobject.dclosure;
+import daphne_includes;
 
 import daphne;
 import library_song;
@@ -102,7 +83,7 @@ class Mpris
       trace("MPRIS Seeked signal: " ~ _seekedPosition.to!string);
 
       try
-        _conn.emitSignal(null, ObjectName, PlayerInterface, "Seeked", Variant.newTuple(_seekedPosition));
+        _conn.emitSignal(null, ObjectName, PlayerInterface, "Seeked", GLibVariant.newTuple(_seekedPosition));
       catch (Exception e)
         warning("Failed to signal player DBus seek: " ~ e.msg);
 
@@ -115,22 +96,22 @@ class Mpris
 
   private void emitPlayerPropsChangedSignal()
   {
-    Variant[string] props;
+    GLibVariant[string] props;
 
     foreach (propName; _changedPlayerProps.byKey)
     {
-      Variant val;
+      GLibVariant val;
 
       switch (propName)
       {
         case "song": propName = "Metadata"; val = getSongMetadata(_daphne.player.song); break;
-        case "playbackStatus": val = new Variant(_daphne.player.playbackStatus); break;
-        case "volume": val = new Variant(_daphne.player.volume); break;
-        case "canGoNext": val = new Variant(_daphne.player.canGoNext); break;
-        case "canGoPrevious": val = new Variant(_daphne.player.canGoPrevious); break;
-        case "canPlay": val = new Variant(_daphne.player.canPlay); break;
-        case "canPause": val = new Variant(_daphne.player.canPause); break;
-        case "canSeek": val = new Variant(_daphne.player.canSeek); break;
+        case "playbackStatus": val = new GLibVariant(_daphne.player.playbackStatus); break;
+        case "volume": val = new GLibVariant(_daphne.player.volume); break;
+        case "canGoNext": val = new GLibVariant(_daphne.player.canGoNext); break;
+        case "canGoPrevious": val = new GLibVariant(_daphne.player.canGoPrevious); break;
+        case "canPlay": val = new GLibVariant(_daphne.player.canPlay); break;
+        case "canPause": val = new GLibVariant(_daphne.player.canPause); break;
+        case "canSeek": val = new GLibVariant(_daphne.player.canSeek); break;
         default: break;
       }
 
@@ -144,7 +125,7 @@ class Mpris
     if (props.length > 0)
     {
       string[] invalidated;
-      auto params = new Variant(PlayerInterface, props, invalidated); // sa{sv}as
+      auto params = new GLibVariant(PlayerInterface, props, invalidated); // sa{sv}as
 
       trace("MPRIS PropertiesChanged signal: " ~ props.to!string);
 
@@ -158,7 +139,7 @@ class Mpris
   }
 
   private void rootMethodCall(DBusConnection conn, string sender, string objectPath, string interfaceName,
-    string methodName, Variant params, DBusMethodInvocation invoc)
+    string methodName, GLibVariant params, DBusMethodInvocation invoc)
   {
     trace("MPRIS root method call: " ~ objectPath ~ " " ~ interfaceName ~ " " ~ methodName ~ " " ~ params.to!string);
 
@@ -180,22 +161,22 @@ class Mpris
       "Method " ~ interfaceName ~ "." ~ methodName ~ " not supported"));
   }
 
-  private Variant rootGetProperty(DBusConnection conn, string sender, string objectPath, string interfaceName,
+  private GLibVariant rootGetProperty(DBusConnection conn, string sender, string objectPath, string interfaceName,
     string propertyName)
   {
-    Variant ret;
+    GLibVariant ret;
 
     if (objectPath == ObjectName && interfaceName == RootInterface)
     {
       switch (propertyName)
       {
-        case "CanQuit": ret = new Variant(true); break;
-        case "CanRaise": ret = new Variant(true); break;
-        case "HasTrackList": ret = new Variant(false); break;
-        case "Identity": ret = new Variant("Daphne"); break;
+        case "CanQuit": ret = new GLibVariant(true); break;
+        case "CanRaise": ret = new GLibVariant(true); break;
+        case "HasTrackList": ret = new GLibVariant(false); break;
+        case "Identity": ret = new GLibVariant("Daphne"); break;
         case "DesktopEntry": break;
-        case "SupportedUriSchemes": ret = new Variant(["file"]); break;
-        case "SupportedMimeTypes": ret = new Variant(SupportedMimeTypes); break;
+        case "SupportedUriSchemes": ret = new GLibVariant(["file"]); break;
+        case "SupportedMimeTypes": ret = new GLibVariant(SupportedMimeTypes); break;
         default: break;
       }
     }
@@ -206,7 +187,7 @@ class Mpris
   }
 
   private void playerMethodCall(DBusConnection conn, string sender, string objectPath, string interfaceName,
-    string methodName, Variant params, DBusMethodInvocation invoc)
+    string methodName, GLibVariant params, DBusMethodInvocation invoc)
   {
     trace("MPRIS player method call: " ~ objectPath ~ " " ~ interfaceName ~ " " ~ methodName ~ " " ~ params.to!string);
 
@@ -251,30 +232,30 @@ class Mpris
       "Method " ~ interfaceName ~ "." ~ methodName ~ " not supported"));
   }
 
-  private Variant playerGetProperty(DBusConnection conn, string sender, string objectPath, string interfaceName,
+  private GLibVariant playerGetProperty(DBusConnection conn, string sender, string objectPath, string interfaceName,
     string propertyName)
   {
-    Variant ret;
+    GLibVariant ret;
 
     if (objectPath == ObjectName && interfaceName == PlayerInterface)
     {
       switch (propertyName)
       {
-        case "PlaybackStatus": ret = new Variant(_daphne.player.playbackStatus); break;
-        case "LoopStatus": ret = new Variant("None"); break;
-        case "Rate": ret = new Variant(1.0); break;
-        case "Shuffle": ret = new Variant(false); break;
+        case "PlaybackStatus": ret = new GLibVariant(_daphne.player.playbackStatus); break;
+        case "LoopStatus": ret = new GLibVariant("None"); break;
+        case "Rate": ret = new GLibVariant(1.0); break;
+        case "Shuffle": ret = new GLibVariant(false); break;
         case "Metadata": ret = getSongMetadata(_daphne.player.song); break;
-        case "Volume": ret = new Variant(_daphne.player.volume); break;
-        case "Position": ret = new Variant(_daphne.player.position); break; // Position in usecs
-        case "MinimumRate": ret = new Variant(1.0); break;
-        case "MaximumRate": ret = new Variant(1.0); break;
-        case "CanGoNext": ret = new Variant(_daphne.player.canGoNext); break;
-        case "CanGoPrevious": ret = new Variant(_daphne.player.canGoPrevious); break;
-        case "CanPlay": ret = new Variant(_daphne.player.canPlay); break;
-        case "CanPause": ret = new Variant(_daphne.player.canPause); break;
-        case "CanSeek": ret = new Variant(_daphne.player.canSeek); break;
-        case "CanControl": ret = new Variant(true); break; // Indicates that the other controls can be used
+        case "Volume": ret = new GLibVariant(_daphne.player.volume); break;
+        case "Position": ret = new GLibVariant(_daphne.player.position); break; // Position in usecs
+        case "MinimumRate": ret = new GLibVariant(1.0); break;
+        case "MaximumRate": ret = new GLibVariant(1.0); break;
+        case "CanGoNext": ret = new GLibVariant(_daphne.player.canGoNext); break;
+        case "CanGoPrevious": ret = new GLibVariant(_daphne.player.canGoPrevious); break;
+        case "CanPlay": ret = new GLibVariant(_daphne.player.canPlay); break;
+        case "CanPause": ret = new GLibVariant(_daphne.player.canPause); break;
+        case "CanSeek": ret = new GLibVariant(_daphne.player.canSeek); break;
+        case "CanControl": ret = new GLibVariant(true); break; // Indicates that the other controls can be used
         default: break;
       }
     }
@@ -285,7 +266,7 @@ class Mpris
   }
 
   private bool playerSetProperty(DBusConnection conn, string sender, string objectPath, string interfaceName,
-    string propertyName, Variant val)
+    string propertyName, GLibVariant val)
   {
     trace("MPRIS player set property: " ~ objectPath ~ " " ~ interfaceName ~ " " ~ propertyName ~ " " ~ val.to!string);
 
@@ -305,38 +286,38 @@ class Mpris
   }
 
   // Get MPRIS metadata dictionary for a song (returns an empty dictionary if song is null)
-  private Variant getSongMetadata(LibrarySong song)
+  private GLibVariant getSongMetadata(LibrarySong song)
   {
-    Variant[string] data;
+    GLibVariant[string] data;
 
     if (song)
     {
-      data["mpris:trackid"] = new Variant(PlayerTrackPrefix ~ song.id.to!string);
+      data["mpris:trackid"] = new GLibVariant(PlayerTrackPrefix ~ song.id.to!string);
 
       import glib.global : filenameToUri;
-      data["xesam:url"] = new Variant(song.filename.filenameToUri);
+      data["xesam:url"] = new GLibVariant(song.filename.filenameToUri);
 
       if (song.length > 0)
-        data["mpris:length"] = new Variant(cast(long)(song.length * 1_000_000)); // Length in microseconds
+        data["mpris:length"] = new GLibVariant(cast(long)(song.length * 1_000_000)); // Length in microseconds
       if (song.album.length > 0)
-        data["xesam:album"] = new Variant(song.album);
+        data["xesam:album"] = new GLibVariant(song.album);
       if (song.artist.length > 0)
-        data["xesam:artist"] = new Variant([song.artist]); // List of strings
+        data["xesam:artist"] = new GLibVariant([song.artist]); // List of strings
       if (song.disc > 0)
-        data["xesam:discNumber"] = new Variant(cast(int)song.disc);
+        data["xesam:discNumber"] = new GLibVariant(cast(int)song.disc);
       if (song.genre.length > 0)
-        data["xesam:genre"] = new Variant([song.genre]); // List of strings
+        data["xesam:genre"] = new GLibVariant([song.genre]); // List of strings
       if (song.title.length > 0)
-        data["xesam:title"] = new Variant(song.title);
+        data["xesam:title"] = new GLibVariant(song.title);
       if (song.track > 0)
-        data["xesam:trackNumber"] = new Variant(cast(int)song.track);
+        data["xesam:trackNumber"] = new GLibVariant(cast(int)song.track);
       if (song.rating > 0)
-        data["xesam:userRating"] = new Variant(cast(double)(song.rating - 1) / 10.0); // Convert 1-11 to 0.0-1.0
+        data["xesam:userRating"] = new GLibVariant(cast(double)(song.rating - 1) / 10.0); // Convert 1-11 to 0.0-1.0
     }
     else
-      data["mpris:trackid"] = new Variant(PlayerTrackNone);
+      data["mpris:trackid"] = new GLibVariant(PlayerTrackNone);
 
-    return new Variant(data);
+    return new GLibVariant(data);
   }
 
   enum SeekedPositionNone = -1;

@@ -1,43 +1,6 @@
 module daphne;
 
-import std.algorithm : map, sort;
-import std.conv : ConvException, to;
-import std.exception : ifThrown;
-import std.file : exists, mkdirRecurse;
-import std.format : format;
-import std.logger;
-import std.path : buildPath;
-import std.stdio : stderr, writeln;
-import std.string : capitalize, join, toStringz;
-import std.traits : EnumMembers;
-
-import gdk.display;
-import gdk.texture;
-import gettext;
-import gio.menu;
-import gio.simple_action;
-import gio.types : ApplicationFlags;
-import glib.bytes;
-import glib.global : getUserConfigDir, idleAdd, timeoutAddSeconds;
-import glib.types : OptionArg, OptionEntry, PRIORITY_DEFAULT, PRIORITY_DEFAULT_IDLE, SOURCE_CONTINUE, SOURCE_REMOVE;
-import glib.variant_dict;
-import glib.variant_type;
-import gobject.types : GTypeEnum;
-import gtk.application;
-import gtk.application_window;
-import gtk.box;
-import gtk.css_provider;
-import gtk.label;
-import gtk.link_button;
-import gtk.notebook;
-import gtk.paned;
-import gtk.picture;
-import gtk.popover_menu_bar;
-import gtk.progress_bar;
-import gtk.spinner;
-import gtk.style_context;
-import gtk.types : Align, Orientation, STYLE_PROVIDER_PRIORITY_APPLICATION;
-import gtk.window;
+import daphne_includes;
 
 import library;
 import artist_view;

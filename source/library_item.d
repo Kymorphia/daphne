@@ -1,9 +1,6 @@
 module library_item;
 
-class library_item;
-
-import gobject.object;
-import gobject.types : GTypeEnum;
+import daphne_includes;
 
 /// An base class for library items (artists, albums and songs)
 class LibraryItem : ObjectWrap

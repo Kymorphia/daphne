@@ -1,18 +1,6 @@
 module song_display;
 
-import std.exception : ifThrown;
-
-import gdk.texture;
-import gettext;
-import glib.bytes;
-import gtk.box;
-import gtk.frame;
-import gtk.grid;
-import gtk.image;
-import gtk.label;
-import gtk.picture;
-import gtk.types : Orientation;
-import pango.types : EllipsizeMode;
+import daphne_includes;
 
 import daphne;
 import library;
