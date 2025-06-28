@@ -23,32 +23,6 @@ class SongDisplay : Box
       _goldRecord = Texture.newFromBytes(bytes).ifThrown(null);
     }
 
-    auto frame = new Frame;
-    frame.marginTop = 4;
-    frame.marginBottom = 4;
-    frame.marginStart = 4;
-    frame.marginEnd = 4;
-    append(frame);
-
-    auto box = new Box(Orientation.Vertical, 0);
-    box.marginTop = 4;
-    box.marginBottom = 4;
-    box.marginStart = 4;
-    box.marginEnd = 4;
-    frame.setChild(box);
-
-    _titleLabel = new Label;
-    _titleLabel.ellipsize = EllipsizeMode.End;
-    box.append(_titleLabel);
-
-    _artistLabel = new Label;
-    _artistLabel.ellipsize = EllipsizeMode.End;
-    box.append(_artistLabel);
-
-    _albumLabel = new Label;
-    _albumLabel.ellipsize = EllipsizeMode.End;
-    box.append(_albumLabel);
-
     picture = new Picture;
     picture.hexpand = true;
     picture.vexpand = true;
@@ -68,15 +42,6 @@ class SongDisplay : Box
   {
     _song = val;
 
-    _titleLabel.label = _song ? _song.title : "";
-    _titleLabel.tooltipText = _song ? _song.title : "";
-
-    _artistLabel.label = _song ? _song.artist : "";
-    _artistLabel.tooltipText = _song ? _song.title : "";
-
-    _albumLabel.label = _song ? _song.album : "";
-    _albumLabel.tooltipText = _song ? _song.title : "";
-
     auto texture = _song ? _song.getPicture : null;
 
     picture.setPaintable(texture ? texture : _goldRecord);
@@ -89,7 +54,4 @@ private:
   Texture _goldRecord;
   Daphne _daphne;
   LibrarySong _song;
-  Label _titleLabel;
-  Label _artistLabel;
-  Label _albumLabel;
 }

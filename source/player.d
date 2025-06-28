@@ -8,8 +8,10 @@ import gst.pipeline;
 import gst.types : Format, SeekFlags, State, SECOND, USECOND;
 
 import daphne;
+import edit_field;
 import library;
 import prop_iface;
+import rating;
 import signal;
 import utils : formatSongTime;
 
@@ -22,41 +24,90 @@ final class Player : Box, PropIface
 
   this(Daphne daphne)
   {
-    super(Orientation.Horizontal, 0);
+    super(Orientation.Vertical, 0);
     _daphne = daphne;
 
+    auto songGrid = new Grid;
+    songGrid.columnSpacing = 10;
+    songGrid.rowSpacing = 2;
+    songGrid.marginStart = 4;
+    songGrid.marginEnd = 4;
+    songGrid.marginTop = 4;
+    songGrid.marginBottom = 4;
+    songGrid.hexpand = true;
+    append(songGrid);
+
+    foreach (i, txt; [tr!"Rating", tr!"Track", tr!"Title", tr!"Artist", tr!"Album", tr!"Year"])
+    {
+      auto lbl = new Label(txt);
+      lbl.addCssClass("player-song-label");
+      lbl.xalign = 0.0;
+      songGrid.attach(lbl, cast(int)i, 0, 1, 1);
+    }
+
+    auto sizeGroup = new SizeGroup(SizeGroupMode.Horizontal);
+
+    _ratingWidg = new Rating;
+    _ratingWidg.marginEnd = 4;
+    songGrid.attach(_ratingWidg, 0, 1, 1, 1);
+    sizeGroup.addWidget(_ratingWidg);
+
+    _trackWidg = new PlayerInfo(LibrarySong.MaxTrack.to!string.length);
+    songGrid.attach(_trackWidg, 1, 1, 1, 1);
+
+    _titleWidg = new PlayerInfo;
+    songGrid.attach(_titleWidg, 2, 1, 1, 1);
+
+    _artistWidg = new PlayerInfo;
+    songGrid.attach(_artistWidg, 3, 1, 1, 1);
+
+    _albumWidg = new PlayerInfo;
+    songGrid.attach(_albumWidg, 4, 1, 1, 1);
+
+    _yearWidg = new PlayerInfo(LibrarySong.MaxYear.to!string.length);
+    songGrid.attach(_yearWidg, 5, 1, 1, 1);
+
+    auto ctrlBox = new Box(Orientation.Horizontal, 0);
+    append(ctrlBox);
+
+    auto btnBox = new Box(Orientation.Horizontal, 0);
+    ctrlBox.marginStart = 4;
+    ctrlBox.marginEnd = 4;
+    ctrlBox.append(btnBox);
+    sizeGroup.addWidget(btnBox);
+
     _prevBtn = Button.newFromIconName("media-skip-backward");
-    append(_prevBtn);
+    btnBox.append(_prevBtn);
 
     _playPauseBtn = Button.newFromIconName("media-playback-start");
-    append(_playPauseBtn);
+    btnBox.append(_playPauseBtn);
 
     _stopBtn = Button.newFromIconName("media-playback-stop");
-    append(_stopBtn);
+    btnBox.append(_stopBtn);
 
     _nextBtn = Button.newFromIconName("media-skip-forward");
-    append(_nextBtn);
+    btnBox.append(_nextBtn);
 
     _timePlayedLabel = new Label;
     _timePlayedLabel.widthChars = TimeWidthChars;
     _timePlayedLabel.addCssClass("mono");
-    append(_timePlayedLabel);
+    ctrlBox.append(_timePlayedLabel);
 
     _songPosScale = new Scale(Orientation.Horizontal);
     _songPosScale.hexpand = true;
-    append(_songPosScale);
+    ctrlBox.append(_songPosScale);
 
     _timeRemainingLabel = new Label;
     _timeRemainingLabel.widthChars = TimeWidthChars;
     _timeRemainingLabel.addCssClass("mono");
-    append(_timeRemainingLabel);
+    ctrlBox.append(_timeRemainingLabel);
 
     _volumeScale = new Scale(Orientation.Horizontal);
     _volumeScale.widthRequest = VolumeScaleWidth;
     _volumeScale.setRange (0.0, 1.0);
     _volumeScale.setValue(_props.volume);
     _volumeScale.tooltipText = tr!"Volume";
-    append(_volumeScale);
+    ctrlBox.append(_volumeScale);
 
     _playbin = ElementFactory.make("playbin3", "playbin");
 
@@ -73,6 +124,11 @@ final class Player : Box, PropIface
     auto bus = _playbin.getBus;
     bus.addSignalWatch;
     bus.connectMessage("eos", () { next; });
+
+    _ratingWidg.propChanged.connect((PropIface propObj, string propName, StdVariant val, StdVariant oldVal) {
+      if (propName == "value" && _props.song)
+        _props.song.rating = _ratingWidg.value;
+    });
 
     _prevBtn.connectClicked(() { prev; });
     _stopBtn.connectClicked(() { stop; });
@@ -103,11 +159,23 @@ final class Player : Box, PropIface
     timeoutAdd(PRIORITY_DEFAULT, RefreshRateMsecs, &refreshPosition);
 
     updateState;
+    updateSong;
+
+    _globalPropChangedHook = propChangedGlobal.connect((PropIface propObj, string propName, StdVariant val,
+        StdVariant oldVal) {
+      if (propObj is _props.song)
+        updateSong;
+    });
+  }
+
+  ~this()
+  {
+    propChangedGlobal.disconnect(_globalPropChangedHook);
   }
 
   struct PropDef
   {
-    @Desc("Current playing song") @(PropFlags.ReadOnly) LibrarySong song;
+    @Desc("Current playing song") @UpdateDelegate("updateSong") @(PropFlags.ReadOnly) LibrarySong song;
     @Desc("Playback status") @(PropFlags.ReadOnly) string playbackStatus = "Stopped";
     @Desc("Volume (0.0 to 1.0)") @UpdateDelegate("updateVolume") double volume = 1.0;
     @Desc("Position in microsecond") @UpdateDelegate("updatePosition") @(PropFlags.ThrowOrGc) long position;
@@ -148,6 +216,17 @@ final class Player : Box, PropIface
       position = posNsecs / USECOND;
 
     return SOURCE_CONTINUE;
+  }
+
+  private void updateSong() // Update song
+  {
+    _trackWidg.content = (_props.song && _props.song.track != 0) ? _props.song.track.to!string : "--";
+    _titleWidg.content = _props.song ? _props.song.title : "-";
+    _artistWidg.content = _props.song ? _props.song.artist : "-";
+    _albumWidg.content = _props.song ? _props.song.album : "-";
+    _yearWidg.content = (_props.song && _props.song.year != 0) ? _props.song.year.to!string : "----";
+    _ratingWidg.value = _props.song ? _props.song.rating : 0;
+    _ratingWidg.sensitive = _props.song !is null;
   }
 
   private void updateVolume() // Volume property update method
@@ -343,6 +422,15 @@ final class Player : Box, PropIface
 private:
   Daphne _daphne;
   LibrarySong _song;
+  propChangedGlobal.SignalHook* _globalPropChangedHook; // Global property change signal hook
+
+  PlayerInfo _trackWidg;
+  PlayerInfo _titleWidg;
+  PlayerInfo _artistWidg;
+  PlayerInfo _albumWidg;
+  PlayerInfo _yearWidg;
+  Rating _ratingWidg;
+
   Button _prevBtn;
   Button _playPauseBtn;
   Button _stopBtn;
@@ -357,4 +445,33 @@ private:
   bool _durationCalculated;
   double _durationSecs;
   long _durationUsecs;
+}
+
+/// Player song information label widget
+class PlayerInfo : Label
+{
+  this(long width = 0)
+  {
+    xalign = 0.0;
+    addCssClass("player-song-info");
+
+    if (widthChars > 0)
+    {
+      widthChars = cast(uint)width;
+      maxWidthChars = cast(uint)width;
+    }
+    else
+    {
+      hexpand = true;
+      ellipsize = EllipsizeMode.End;
+    }
+  }
+
+  @property void content(string val)
+  {
+    label = val;
+
+    if (hexpand)
+      tooltipText = val;
+  }
 }

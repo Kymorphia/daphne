@@ -3,6 +3,7 @@ module song_view;
 import daphne_includes;
 
 import daphne;
+import history_column_view;
 import library;
 import prop_iface;
 import rating;
@@ -10,7 +11,10 @@ import signal;
 import song_column_view;
 import utils : formatSongTime;
 
-/// Song view widget
+/**
+ * Song view widget. Contains a SongColumnView for song search and a HistoryColumnView for play history,
+ * selectable by toggle buttons.
+ */
 class SongView : Box
 {
   this(Daphne daphne)
@@ -22,7 +26,6 @@ class SongView : Box
     append(hbox);
 
     _searchEntry = new SearchEntry;
-    _searchChangedHandler = _searchEntry.connectSearchChanged(&onSearchEntryChanged);
     _searchEntry.searchDelay = 500;
     _searchEntry.hexpand = true;
     hbox.append(_searchEntry);
@@ -31,92 +34,119 @@ class SongView : Box
     _selectionClearBtn.visible = false;
     hbox.append(_selectionClearBtn);
 
-    _selectionClearBtn.connectClicked(() {
-      clearSelection;
-    });
+    auto songsBtn = new ToggleButton;
+    songsBtn.setChild(Image.newFromIconName("multimedia-player"));
+    songsBtn.tooltipText = tr!"Songs";
+    songsBtn.active = true;
+    hbox.append(songsBtn);
+
+    auto historyBtn = new ToggleButton;
+    historyBtn.setChild(Image.newFromIconName("x-office-calendar"));
+    historyBtn.tooltipText = tr!"History";
+    historyBtn.setGroup(songsBtn);
+    hbox.append(historyBtn);
 
     _queueSongsButton = Button.newFromIconName("list-add");
     _queueSongsButton.hexpand = false;
     _queueSongsButton.tooltipText = tr!"Add songs to queue";
     hbox.append(_queueSongsButton);
 
-    _queueSongsButton.connectClicked(&onQueueSongsButtonClicked);
+    auto stack = new Stack;
+    append(stack);
 
-    _scrolledWindow = new ScrolledWindow;
-    _scrolledWindow.setVexpand(true);
-    _scrolledWindow.setHexpand(true);
-    append(_scrolledWindow);
+    _songsScrolledWindow = new ScrolledWindow;
+    _songsScrolledWindow.setVexpand(true);
+    _songsScrolledWindow.setHexpand(true);
+    stack.addChild(_songsScrolledWindow);
 
-    _songColumnView = new SongColumnView(true);
-    _scrolledWindow.setChild(_songColumnView);
+    songColumnView = new SongColumnView(true, true);
+    songColumnView.searchFilter.setFilterFunc(&songColumnViewFilterFunc); // Override filter method for song view
+    _songsScrolledWindow.setChild(songColumnView);
 
-    _selModel = cast(MultiSelection)_songColumnView.model;
-    auto listModel = cast(ListStore)_selModel.model;
+    _historyScrolledWindow = new ScrolledWindow;
+    _historyScrolledWindow.setVexpand(true);
+    _historyScrolledWindow.setHexpand(true);
+    stack.addChild(_historyScrolledWindow);
 
-    _songColumnView.splice(0, 0, _daphne.library.songFiles.values.map!(song => new SongColumnViewItem(song)).array);
+    historyColumnView = new HistoryColumnView(daphne);
+    _historyScrolledWindow.setChild(historyColumnView);
 
-    _searchFilter = new CustomFilter(&searchFilterFunc);
-    auto filterListModel = new FilterListModel(listModel, _searchFilter); // Used to filter on search text
-    _sortModel = new SortListModel(filterListModel, _songColumnView.getSorter);
-    _selModel.model = _sortModel;
+    _activeView = songColumnView;
 
-    _songColumnView.selectionChanged.connect((LibrarySong[] selection) {
-      selectionChanged.emit(selection);
+    // Add all the library songs to the song view
+    songColumnView.splice(0, 0, _daphne.library.songFiles.values.map!(song => new SongColumnViewItem(song)).array);
 
-      if (selection.length > 0)
+    songsBtn.connectToggled(() {
+      if (songsBtn.getActive)
       {
-        _selectionClearBtn.label = format(tr!"%d selected", selection.length);
-        _selectionClearBtn.visible = true;
+        _activeView = songColumnView;
+        stack.visibleChild = _songsScrolledWindow;
       }
       else
-        _selectionClearBtn.visible = false;
+      {
+        _activeView = historyColumnView;
+        stack.visibleChild = _historyScrolledWindow;
+      }
+
+      _activeView.searchString = _searchEntry.text;
+      updateSelectionClearBtn;
+    });
+
+    _searchEntry.connectSearchChanged(() {
+      _activeView.searchString = _searchEntry.text.toLower;
+    });
+
+    _selectionClearBtn.connectClicked(() {
+      _activeView.clearSelection;
+    });
+
+    _queueSongsButton.connectClicked(&onQueueSongsButtonClicked);
+
+    songColumnView.propChanged.connect((propObj, propName, val, oldVal) {
+      propName == "selection" && updateSelectionClearBtn;
+    });
+
+    historyColumnView.propChanged.connect((propObj, propName, val, oldVal) {
+      propName == "selection" && updateSelectionClearBtn;
     });
   }
 
-  @property LibrarySong[] selection()
+  private bool songColumnViewFilterFunc(ObjectWrap item)
   {
-    return _songColumnView.selection;
+    auto song = (cast(SongColumnViewItem)item).song;
+
+    return songColumnView.searchFilterFunc(item) // Chain to SongColumnView string search method
+      && (_filterAlbums.length == 0 || _filterAlbums.canFind(song.album.toLower)) // And no albums filter or album matches
+      && (_filterAlbums.length > 0 || _filterArtists.length == 0 || _filterArtists.canFind(song.artist.toLower)); // And albums filter or no artists filter or artist matches
   }
 
   private void onQueueSongsButtonClicked() // Callback for when queue songs button is clicked
   {
-    if (selection.length == 0) // If no items are selected queue all of them
+    LibrarySong[] songs = _activeView.selection;
+
+    if (songs.length == 0) // If no items are selected queue all of them
+      foreach (i; 0 .. _activeView.sortModel.getNItems)
+        songs ~= (cast(SongColumnViewItem)_activeView.sortModel.getItem(cast(uint)i)).song;
+
+    _daphne.playQueue.add(songs);
+  }
+
+  private void updateSelectionClearBtn()
+  {
+    auto selection = _activeView.selection;
+    if (selection.length > 0)
     {
-      LibrarySong[] songs;
-
-      foreach (i; 0 .. _sortModel.getNItems)
-        songs ~= (cast(SongColumnViewItem)_sortModel.getItem(cast(uint)i)).song;
-
-      _daphne.playQueue.add(songs);
+      _selectionClearBtn.label = format(tr!"%d selected", selection.length);
+      _selectionClearBtn.visible = true;
     }
     else
-      _daphne.playQueue.add(selection); // Add selected songs
+      _selectionClearBtn.visible = false;
   }
 
-  private void onSearchEntryChanged()
+  /// Open history database
+  void openHistory()
   {
-    auto newSearch = _searchEntry.text.toLower;
-    if (newSearch == _searchString)
-      return;
-
-    auto change = FilterChange.Different;
-
-    if (newSearch.startsWith(_searchString) || newSearch.endsWith(_searchString)) // Was search string appended or prepended to?
-      change = FilterChange.MoreStrict;
-    else if (_searchString.startsWith(newSearch) || _searchString.endsWith(newSearch)) // Were characters removed from start or beginning?
-      change = FilterChange.LessStrict;
-
-    _searchString = newSearch;
-    _searchFilter.changed(change);
-  }
-
-  private bool searchFilterFunc(ObjectWrap item)
-  {
-    auto libSong = (cast(SongColumnViewItem)item).song;
-
-    return (_searchString.length == 0 || libSong.name.toLower.canFind(_searchString)) // No search or search matches?
-      && (_filterAlbums.length == 0 || _filterAlbums.canFind(libSong.album.toLower)) // And no albums filter or album matches
-      && (_filterAlbums.length > 0 || _filterArtists.length == 0 || _filterArtists.canFind(libSong.artist.toLower)); // And albums filter or no artists filter or artist matches
+    historyColumnView.open;
   }
 
   /**
@@ -126,9 +156,9 @@ class SongView : Box
    */
   void filterArtists(LibraryArtist[] artists)
   {
-    clearSelection; // Make sure to do this before changing the filter or it wont work right
+    songColumnView.clearSelection; // Make sure to do this before changing the filter or it wont work right
     _filterArtists = artists.map!(x => x.name.toLower).array;
-    _searchFilter.changed(FilterChange.Different);
+    songColumnView.searchFilter.changed(FilterChange.Different);
   }
 
   /**
@@ -136,39 +166,28 @@ class SongView : Box
    * Params:
    *   albums = List of albums to filter by or empty/null to not filter
    */
-  void setAlbums(LibraryAlbum[] albums)
+  void filterAlbums(LibraryAlbum[] albums)
   {
-    clearSelection; // Make sure to do this before changing the filter or it wont work right
+    songColumnView.clearSelection; // Make sure to do this before changing the filter or it wont work right
     _filterAlbums = albums.map!(x => x.name.toLower).array;
-    _searchFilter.changed(FilterChange.Different);
+    songColumnView.searchFilter.changed(FilterChange.Different);
   }
 
-  /**
-   * Add a song to the view.
-   */
-  void addSong(LibrarySong song)
-  {
-    _songColumnView.add(new SongColumnViewItem(song));
-  }
-
-  /// Clear the selection
-  void clearSelection()
-  {
-    _selModel.unselectAll;
-  }
-
-  mixin Signal!(LibrarySong[]) selectionChanged; /// Selected songs changed signal
+  SongColumnView songColumnView;
+  HistoryColumnView historyColumnView;
 
 private:
   Daphne _daphne;
+
   SearchEntry _searchEntry;
-  ulong _searchChangedHandler; // connectSearchChanged handler
   string _searchString;
-  ScrolledWindow _scrolledWindow;
-  CustomFilter _searchFilter;
-  SortListModel _sortModel;
-  MultiSelection _selModel;
-  SongColumnView _songColumnView;
+
+  SongColumnView _activeView; // Will be either songColumnView or historyColumnView
+  ScrolledWindow _songsScrolledWindow;
+  SortListModel _songSortModel;
+
+  ScrolledWindow _historyScrolledWindow;
+
   Button _queueSongsButton;
   Button _selectionClearBtn;
   string[] _filterArtists; // Artist names to filter by

@@ -7,13 +7,12 @@ import library : UnknownName;
 import library_song;
 import prop_iface;
 import rating;
-import signal;
 import utils : formatSongTime;
 
 /// Song column view widget. Used by SongView and PlayQueue
-class SongColumnView : ColumnView
+class SongColumnView : ColumnView, PropIface
 {
-  this(bool enableSorting)
+  this(bool enableSorting, bool enableSearching)
   {
     addCssClass("data-table");
 
@@ -25,6 +24,14 @@ class SongColumnView : ColumnView
     if (enableSorting)
       setColumnSorters;
 
+    if (enableSearching)
+    {
+      _props.searchFilter = new CustomFilter(&searchFilterFunc);
+      auto filterListModel = new FilterListModel(_listModel, _props.searchFilter);
+      sortModel = new SortListModel(filterListModel, getSorter);
+      _selModel.model = sortModel;
+    }
+
     _selModel.connectSelectionChanged(&onSelectionModelChanged);
     _globalPropChangedHook = propChangedGlobal.connect(&onGlobalPropChanged);
   }
@@ -33,6 +40,14 @@ class SongColumnView : ColumnView
   {
     propChangedGlobal.disconnect(_globalPropChangedHook);
   }
+
+  struct PropDef
+  {
+    @Desc("Song selection") @(PropFlags.ReadOnly) LibrarySong[] selection;
+    @Desc("Search filter") @(PropFlags.ReadOnly) CustomFilter searchFilter;
+  }
+
+  mixin(definePropIface!(PropDef, true));
 
   private void addColumns() // Add ColumnView columns
   { // Track
@@ -213,6 +228,41 @@ class SongColumnView : ColumnView
     sortByColumn(_columns[Column.Title], SortType.Ascending);
   }
 
+  /**
+   * CustomFilter function to filter by searchString. For filter chaining.
+   * Params:
+   *   item = The item to check filter on
+   * Returns: true if item should be shown, false to filter it out
+   */
+  bool searchFilterFunc(ObjectWrap item)
+  {
+    return _searchString.length == 0 || (cast(SongColumnViewItem)item).song.name.toLower.canFind(_searchString); // No search or search matches?
+  }
+
+  /// Get the search string
+  @property string searchString()
+  {
+    return _searchString;
+  }
+
+  /// Set the search string
+  @property void searchString(string val)
+  {
+    auto newSearch = val.toLower;
+    if (newSearch == _searchString)
+      return;
+
+    auto change = FilterChange.Different;
+
+    if (newSearch.startsWith(_searchString) || newSearch.endsWith(_searchString)) // Was search string appended or prepended to?
+      change = FilterChange.MoreStrict;
+    else if (_searchString.startsWith(newSearch) || _searchString.endsWith(newSearch)) // Were characters removed from start or beginning?
+      change = FilterChange.LessStrict;
+
+    _searchString = newSearch;
+    _props.searchFilter.changed(change);
+  }
+
   // Callback for global PropIface object property changes
   private void onGlobalPropChanged(PropIface propObj, string propName, StdVariant val, StdVariant oldVal)
   {
@@ -259,20 +309,18 @@ class SongColumnView : ColumnView
 
   private void onSelectionModelChanged()
   {
-    selection = [];
+    LibrarySong[] newSelection;
     BitsetIter iter;
     uint position;
 
     if (BitsetIter.initFirst(iter, _selModel.getSelection, position))
     {
-      do
-      {
-        selection ~= (cast(SongColumnViewItem)_selModel.getItem(position)).song;
-      }
-      while (iter.next(position));
+      do {
+        newSelection ~= (cast(SongColumnViewItem)_selModel.getItem(position)).song;
+      } while (iter.next(position));
     }
 
-    selectionChanged.emit(selection);
+    selection = newSelection;
   }
 
   /**
@@ -323,6 +371,14 @@ class SongColumnView : ColumnView
   {
     _songItems[item.song] = item;
     _listModel.append(item);
+  }
+
+  /**
+   * Add a song to the view.
+   */
+  void addSong(LibrarySong song)
+  {
+    add(new SongColumnViewItem(song));
   }
 
   /**
@@ -383,9 +439,11 @@ class SongColumnView : ColumnView
     _listModel.removeAll;
   }
 
-  mixin Signal!(LibrarySong[]) selectionChanged; /// Selected songs changed signal
-
-  LibrarySong[] selection;
+  /// Clear the selection
+  void clearSelection()
+  {
+    _selModel.unselectAll;
+  }
 
   enum Column
   {
@@ -398,7 +456,9 @@ class SongColumnView : ColumnView
     Length,
   }
 
-private:
+  SortListModel sortModel;
+
+protected:
   ColumnViewColumn[Column.max + 1] _columns;
   string _searchString;
   MultiSelection _selModel;

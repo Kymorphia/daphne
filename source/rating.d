@@ -7,13 +7,14 @@ import prop_iface;
 class Rating : DrawingArea, PropIface
 {
   enum BarCount = 11;
-  enum BarWidth = 4;
+  enum BarMinWidth = 4;
   enum BarSpacing = 4;
+  enum MinWidth = BarCount * BarMinWidth + ((BarCount - 1) * BarSpacing) + 1;
 
   this()
   {
     setDrawFunc(&drawFunc);
-    setSizeRequest(BarCount * BarWidth + ((BarCount - 1) * BarSpacing), -1);
+    setSizeRequest(MinWidth, -1);
     setCanFocus(true);
     setFocusable(true);
 
@@ -49,13 +50,14 @@ class Rating : DrawingArea, PropIface
   {
     _width = width;
     _height = height;
+    _barWidth = width <= MinWidth ? BarMinWidth : ((width - (((BarCount - 1) * BarSpacing) + 1.0)) / BarCount);
 
     auto val = _pressActive ? _valueActive : _props.value;
 
     if (val > 0)
     {
       foreach (i; 0 .. val)
-        cr.rectangle(i * (BarWidth + BarSpacing), 0.0, BarWidth, height);
+        cr.rectangle(i * (_barWidth + BarSpacing), 0.0, _barWidth, height);
 
       auto pat = patternCreateLinear(0.0, 0.0, width, 0.0);
       pat.addColorStopRgb(0.0, 0.0, 0.0, 1.0); // Blue
@@ -69,7 +71,7 @@ class Rating : DrawingArea, PropIface
     if (val < 11)
     {
       foreach (i; val .. 11)
-        cr.rectangle(i * (BarWidth + BarSpacing), 0.0, BarWidth, height);
+        cr.rectangle(i * (_barWidth + BarSpacing), 0.0, _barWidth, height);
 
       cr.setSourceRgb(0.5, 0.5, 0.5);
       cr.setLineWidth(1.0);
@@ -79,16 +81,17 @@ class Rating : DrawingArea, PropIface
 
   private void onPressed(int nPress, double x, double y, GestureClick gestureClick)
   {
-    if (gestureClick.getCurrentButton == 1)
+    if (!_pressActive && gestureClick.getCurrentButton == 1 && sensitive)
     {
       _pressActive = true;
       _valueActive = _props.value;
+      grabFocus;
     }
   }
 
   private void onReleased(int nPress, double x, double y, GestureClick gestureClick)
   {
-    if (gestureClick.getCurrentButton == 1)
+    if (_pressActive && gestureClick.getCurrentButton == 1)
     {
       _pressActive = false;
       value = _valueActive;
@@ -99,7 +102,7 @@ class Rating : DrawingArea, PropIface
   {
     if (_pressActive)
     {
-      _valueActive = cast(ubyte)clamp(x / (BarWidth + BarSpacing) + 1, 0, BarCount);
+      _valueActive = cast(ubyte)clamp(x / (_barWidth + BarSpacing) + 1, 0, BarCount);
       queueDraw;
     }
   }
@@ -133,6 +136,7 @@ class Rating : DrawingArea, PropIface
 private:
   int _width; // Cached width of drawing area
   int _height; // Cached height of drawing area
+  double _barWidth; // Width of bars (at least BarMinWidth)
   bool _pressActive; // True if a mouse press is active
   ubyte _valueActive; // Current active value from press (value is set on release)
 }

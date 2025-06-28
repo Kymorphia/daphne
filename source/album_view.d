@@ -22,7 +22,7 @@ class AlbumView : Box
 
     _searchEntry = new SearchEntry;
     _searchEntry.hexpand = true;
-    _searchChangedHandler = _searchEntry.connectSearchChanged(&onSearchEntryChanged);
+    _searchEntry.connectSearchChanged(&onSearchEntryChanged);
     _searchEntry.searchDelay = 500;
     hbox.append(_searchEntry);
 
@@ -258,7 +258,6 @@ class AlbumView : Box
 private:
   Daphne _daphne;
   SearchEntry _searchEntry;
-  ulong _searchChangedHandler; // connectSearchChanged handler
   string _searchString;
   ScrolledWindow _scrolledWindow;
   MultiSelection _selModel;

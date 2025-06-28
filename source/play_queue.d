@@ -23,7 +23,6 @@ class PlayQueue : Box, PropIface
     append(hbox);
 
     _searchEntry = new SearchEntry;
-    _searchChangedHandler = _searchEntry.connectSearchChanged(&onSearchEntryChanged);
     _searchEntry.searchDelay = 500;
     _searchEntry.hexpand = true;
     hbox.append(_searchEntry);
@@ -33,21 +32,13 @@ class PlayQueue : Box, PropIface
     shuffleButton.hexpand = false;
     hbox.append(shuffleButton);
 
-    shuffleButton.connectClicked(&onShuffleButtonClicked);
-
     _scrolledWindow = new ScrolledWindow;
     _scrolledWindow.setVexpand(true);
     _scrolledWindow.setHexpand(true);
     append(_scrolledWindow);
 
-    _songColumnView = new SongColumnView(false);
+    _songColumnView = new SongColumnView(false, true);
     _scrolledWindow.setChild(_songColumnView);
-
-    _selModel = cast(MultiSelection)_songColumnView.model;
-
-    _searchFilter = new CustomFilter(&searchFilterFunc);
-    auto filterListModel = new FilterListModel(_selModel.model, _searchFilter); // Used to filter on search text
-    _selModel.model = filterListModel;
 
     auto shortCtrl = new ShortcutController;
     shortCtrl.setScope(ShortcutScope.Local);
@@ -55,6 +46,12 @@ class PlayQueue : Box, PropIface
 
     shortCtrl.addShortcut(new Shortcut(ShortcutTrigger.parseString("Delete"),
       new CallbackAction(&onDeleteKeyCallback)));
+
+    shuffleButton.connectClicked(&onShuffleButtonClicked);
+
+    _searchEntry.connectSearchChanged(() {
+      _songColumnView.searchString = _searchEntry.text.toLower;
+    });
   }
 
   struct PropDef
@@ -67,7 +64,7 @@ class PlayQueue : Box, PropIface
 
   private bool onDeleteKeyCallback(Widget widg, GLibVariant args)
   {
-    auto ranges = getSelectionRanges(_selModel);
+    auto ranges = getSelectionRanges(cast(MultiSelection)_songColumnView.model);
     long[] qIds;
 
     // Loop in reverse so that positions don't change as items are removed
@@ -86,23 +83,6 @@ class PlayQueue : Box, PropIface
       error("Queue DB delete error: " ~ e.msg);
 
     return true;
-  }
-
-  private void onSearchEntryChanged()
-  {
-    auto newSearch = _searchEntry.text.toLower;
-    if (newSearch == _searchString)
-      return;
-
-    auto change = FilterChange.Different;
-
-    if (newSearch.startsWith(_searchString) || newSearch.endsWith(_searchString)) // Was search string appended or prepended to?
-      change = FilterChange.MoreStrict;
-    else if (_searchString.startsWith(newSearch) || _searchString.endsWith(newSearch)) // Were characters removed from start or beginning?
-      change = FilterChange.LessStrict;
-
-    _searchString = newSearch;
-    _searchFilter.changed(change);
   }
 
   private void onShuffleButtonClicked()
@@ -126,11 +106,6 @@ class PlayQueue : Box, PropIface
     }
     catch (Exception e)
       error("Queue DB shuffle error: " ~ e.msg);
-  }
-
-  private bool searchFilterFunc(ObjectWrap item)
-  {
-    return (_searchString.length == 0 || (cast(SongColumnViewItem)item).song.name.toLower.canFind(_searchString)); // No search or search matches?
   }
 
   /**
@@ -257,7 +232,7 @@ class PlayQueue : Box, PropIface
   {
     if (auto item = _songColumnView.getItem(0))
     {
-      _daphne.history.addSong(item.song);
+      _daphne.songView.historyColumnView.addSong(item.song);
       remove(0);
     }
   }
@@ -267,7 +242,7 @@ class PlayQueue : Box, PropIface
    */
   void prev()
   {
-    if (auto song = _daphne.history.pop)
+    if (auto song = _daphne.songView.historyColumnView.pop)
     {
       stop;
       insert([song], 0);
@@ -305,11 +280,7 @@ private:
   Daphne _daphne;
   long _nextQueueId = 1;
   SearchEntry _searchEntry;
-  ulong _searchChangedHandler;
-  string _searchString;
   ScrolledWindow _scrolledWindow;
-  MultiSelection _selModel;
-  CustomFilter _searchFilter;
   SongColumnView _songColumnView;
   bool isPlaying;
 }
