@@ -1,4 +1,4 @@
-module song_display;
+module cover_display;
 
 import daphne_includes;
 
@@ -8,10 +8,8 @@ import library;
 enum string goldRecordSvg = import("gold_record.svg");
 
 /// Song display widget (album cover, title, artist, album)
-class SongDisplay : Box
+class CoverDisplay : Box
 {
-  enum DefaultPictureSize = 300;
-
   this(Daphne daphne)
   {
     super(Orientation.Vertical, 0);
@@ -27,8 +25,6 @@ class SongDisplay : Box
     picture.hexpand = true;
     picture.vexpand = true;
     picture.canShrink = true;
-    picture.widthRequest = DefaultPictureSize; // FIXME - Cannot shrink smaller than this
-    picture.heightRequest = DefaultPictureSize;
     picture.setPaintable(_goldRecord);
     append(picture);
   }

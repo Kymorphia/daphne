@@ -11,7 +11,7 @@ import play_queue;
 import prefs;
 import prop_iface;
 import signal;
-import song_display;
+import cover_display;
 import song_view;
 
 enum DaphneVersion = "1.0";
@@ -52,6 +52,7 @@ class Daphne : Application
   enum DefaultHeight = 800;
   enum DefaultArtistViewWidth = 300;
   enum IndexerProgressBarWidth = 50;
+  enum DefaultCoverPictureSize = 360;
 
 	OptionEntry[] cmdLineOptions =
 		[
@@ -217,10 +218,18 @@ MIT license`;
     hpanedPlayer.resizeStartChild = false;
     hpanedPlayer.resizeEndChild = true;
     hpanedPlayer.marginTop = 2;
+    hpanedPlayer.position = DefaultCoverPictureSize;
     vPaned.setEndChild(hpanedPlayer);
 
-    songDisplay = new SongDisplay(this);
-    hpanedPlayer.setStartChild(songDisplay);
+    coverDisplay = new CoverDisplay(this);
+    hpanedPlayer.setStartChild(coverDisplay);
+
+    idleAdd(PRIORITY_DEFAULT_IDLE, () { // Hack to set vPaned position to set coverDisplay to proper size, without using requestWidth/requestHeight which sets minimum size
+      if (vPaned.getAllocatedHeight > DefaultCoverPictureSize)
+        vPaned.position = vPaned.getAllocatedHeight - DefaultCoverPictureSize;
+
+      return SOURCE_REMOVE;
+    });
 
     auto playBox = new Box(Orientation.Vertical, 0);
     playBox.marginStart = 2;
@@ -260,7 +269,7 @@ MIT license`;
     playQueue.propChanged.connect((PropIface propObj, string propName, StdVariant val, StdVariant oldVal) {
       if (propName == "currentSong")
         if (auto song = val.get!LibrarySong.ifThrown(null))
-          songDisplay.song = song;
+          coverDisplay.song = song;
     });
 
     library.newArtist.connect((LibraryArtist artist) {
@@ -472,7 +481,7 @@ MIT license`;
   ArtistView artistView;
   AlbumView albumView;
   SongView songView;
-  SongDisplay songDisplay;
+  CoverDisplay coverDisplay;
   PlayQueue playQueue;
   Player player;
   Mpris mpris;
