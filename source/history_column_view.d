@@ -123,12 +123,14 @@ class HistoryColumnView : SongColumnView
   alias pop = SongColumnView.pop;
 
   /**
-   * Pop the current song off of the history. Removes it from the history and returns it.
+   * Pop the song off of the end of the history. Removes it from the history and returns it.
    * Returns: Song popped off of the end of the history or null if none
    */
   LibrarySong pop()
   {
     auto item = cast(HistoryColumnViewItem)super.pop;
+    if (!item)
+      return null;
 
     try
       _daphne.playQueue.dbConn.executeSql("DELETE FROM history WHERE id=" ~ item.id.to!string);

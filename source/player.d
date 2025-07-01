@@ -45,7 +45,7 @@ final class Player : Box, PropIface
       songGrid.attach(lbl, cast(int)i, 0, 1, 1);
     }
 
-    auto sizeGroup = new SizeGroup(SizeGroupMode.Horizontal);
+    auto sizeGroup = new SizeGroup(SizeGroupMode.Horizontal); // Size group for rating widget and play buttons box
 
     _ratingWidg = new Rating;
     _ratingWidg.marginEnd = 4;
@@ -146,14 +146,14 @@ final class Player : Box, PropIface
       setPosition(cast(long)(_songPosScale.getValue * 1_000_000));
     });
 
-    _daphne.playQueue.propChanged.connect((PropIface propObj, string propName, StdVariant val, StdVariant oldVal) {
+    _daphne.playQueue.songColumnView.propChanged.connect((propObj, propName, val, oldVal) {
       if (propName == "songCount" && (val.get!uint == 0) != (oldVal.get!uint == 0)) // Only update state when changing queue song count from 0 to nonzero or nonzero to 0
         updateState;
-      else if (propName == "currentSong" && _state == State.Playing) // If current queue song changes while playing (deleted), stop and play
-      {
-        stop;
-        play;
-      }
+    });
+
+    _daphne.songView.historyColumnView.propChanged.connect((propObj, propName, val, oldVal) {
+      if (propName == "songCount" && (val.get!uint == 0) != (oldVal.get!uint == 0)) // Only update state when changing history song count from 0 to nonzero or nonzero to 0
+        updateState;
     });
 
     timeoutAdd(PRIORITY_DEFAULT, RefreshRateMsecs, &refreshPosition);
@@ -161,8 +161,7 @@ final class Player : Box, PropIface
     updateState;
     updateSong;
 
-    _globalPropChangedHook = propChangedGlobal.connect((PropIface propObj, string propName, StdVariant val,
-        StdVariant oldVal) {
+    _globalPropChangedHook = propChangedGlobal.connect((propObj, propName, val, oldVal) {
       if (propObj is _props.song)
         updateSong;
     });
@@ -218,7 +217,7 @@ final class Player : Box, PropIface
     return SOURCE_CONTINUE;
   }
 
-  private void updateSong() // Update song
+  private void updateSong() // Update song widgets
   {
     _trackWidg.content = (_props.song && _props.song.track != 0) ? _props.song.track.to!string : "--";
     _titleWidg.content = _props.song ? _props.song.title : "-";
@@ -254,14 +253,14 @@ final class Player : Box, PropIface
   }
 
   // Should be called after state changes which affect properties, so that listeners are notified.
-  // This currently includes: _song, _state, playQueue.songCount, and _durationCalculated.
+  // This currently includes: _song, _state, playQueue.songColumnView.songCount, songView.historyColumnView.songCount, and _durationCalculated.
   private void updateState()
   {
     song = _song;
     playbackStatus = _state == State.Playing ? "Playing" : (_state == State.Paused ? "Paused" : "Stopped");
-    canGoNext = _daphne.playQueue.songCount > 0;
-    canGoPrevious = false; // TODO
-    canPlay = _daphne.playQueue.songCount > 0;
+    canGoNext = _daphne.playQueue.songColumnView.songCount > 0;
+    canGoPrevious = _daphne.songView.historyColumnView.songCount > 0;
+    canPlay = _song || _daphne.playQueue.songColumnView.songCount > 0;
     canPause = _state == State.Playing;
     canSeek = (_state == State.Playing || _state == State.Paused) && _durationCalculated;
   }
@@ -320,8 +319,12 @@ final class Player : Box, PropIface
     return false;
   }
 
-  /// Play top of queue or unpause if paused.
-  void play()
+  /**
+   * Play or unpause a song.  If song is not specified then the top of the queue is popped and played.
+   * Params:
+   *   song = The song to play or null to play top of queue.
+   */
+  void play(LibrarySong song = null)
   {
     if (_state == State.Playing) // Already playing?  Return
       return;
@@ -335,25 +338,22 @@ final class Player : Box, PropIface
       return;
     }
 
-    _song = _daphne.playQueue.start;
-    if (!_song)
+    _song = song ? song : _daphne.playQueue.pop;
+    if (_song)
     {
-      updateState;
-      return;
+      import glib.global : filenameToUri;
+      _playbin.setProperty("uri", _song.filename.filenameToUri);
+
+      _durationCalculated = false;
+      _durationSecs = _song.length; // Gets updated later to be the real time calculated by GStreamer
+      _songPosScale.setRange(0, _durationSecs);
+      _timePlayedLabel.label = formatSongTime(0, cast(uint)_durationSecs);
+      _timeRemainingLabel.label = formatSongTime(cast(uint)_durationSecs);
+
+      _playbin.setState(State.Playing);
+      _playPauseBtn.setIconName("media-playback-pause");
+      _state = State.Playing;
     }
-
-    import glib.global : filenameToUri;
-    _playbin.setProperty("uri", _song.filename.filenameToUri);
-
-    _durationCalculated = false;
-    _durationSecs = _song.length; // Gets updated later to be the real time calculated by GStreamer
-    _songPosScale.setRange(0, _durationSecs);
-    _timePlayedLabel.label = formatSongTime(0, cast(uint)_durationSecs);
-    _timeRemainingLabel.label = formatSongTime(cast(uint)_durationSecs);
-
-    _playbin.setState(State.Playing);
-    _playPauseBtn.setIconName("media-playback-pause");
-    _state = State.Playing;
 
     updateState;
   }
@@ -378,10 +378,14 @@ final class Player : Box, PropIface
       play;
   }
 
-  /// Stop playing
-  void stop()
+  /**
+   * Stop playing.
+   * Params:
+   *   pushAction = Push action to perform with current song (defaults to adding the song to the top of the play queue)
+   */
+  void stop(PushAction pushAction = PushAction.PlayQueue)
   {
-    if (_state <= State.Ready)
+    if (_state <= State.Ready || !_song)
       return;
 
     _playbin.setState(State.Ready);
@@ -397,24 +401,47 @@ final class Player : Box, PropIface
     _songPosScale.setValue(0);
     signalHandlerUnblock(_songPosScale, _songPosScaleHandler);
 
-    _daphne.playQueue.stop;
+    final switch (pushAction) with (PushAction)
+    {
+      case PlayQueue: _daphne.playQueue.push(_song); break;
+      case History: _daphne.songView.historyColumnView.addSong(_song); break;
+      case None: break;
+    }
+
+    _song = null;
     updateState;
   }
 
   /// Next track
   void next()
   {
-    stop;
-    _daphne.playQueue.next;
+    if (_state <= State.Ready) // Stopped?
+    {
+      if (auto song = _daphne.playQueue.pop) // Pop the top of queue and push to history
+        _daphne.songView.historyColumnView.addSong(song);
+    }
+    else
+      stop(PushAction.History); // Push current song to history
+
     play;
   }
 
   /// Previous track
   void prev()
   {
-    stop;
-    _daphne.playQueue.prev;
-    play;
+    if (_state == State.Playing || _state == State.Paused) // Playing or paused?
+      stop(PushAction.PlayQueue);
+
+    if (auto song = _daphne.songView.historyColumnView.pop)
+      play(song);
+  }
+
+  /// Song push action
+  enum PushAction
+  {
+    None, /// Do nothing
+    PlayQueue, /// Push song onto top of play queue
+    History, /// Push song onto end of history
   }
 
   mixin Signal!(long) seeked;

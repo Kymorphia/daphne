@@ -43,6 +43,7 @@ class SongColumnView : ColumnView, PropIface
 
   struct PropDef
   {
+    @Desc("Song count") @(PropFlags.ReadOnly) uint songCount;
     @Desc("Song selection") @(PropFlags.ReadOnly) LibrarySong[] selection;
     @Desc("Search filter") @(PropFlags.ReadOnly) CustomFilter searchFilter;
   }
@@ -371,6 +372,7 @@ class SongColumnView : ColumnView, PropIface
   {
     _songItems[item.song] = item;
     _listModel.append(item);
+    songCount = _listModel.getNItems;
   }
 
   /**
@@ -387,16 +389,13 @@ class SongColumnView : ColumnView, PropIface
    */
   SongColumnViewItem pop()
   {
-    auto nItems = _listModel.getNItems;
+    if (_props.songCount == 0)
+      return null;
 
-    if (nItems > 0)
-    {
-      auto item = cast(SongColumnViewItem)_listModel.getItem(nItems - 1);
-      _listModel.remove(nItems - 1);
-      return item;
-    }
-
-    return null;
+    auto item = cast(SongColumnViewItem)_listModel.getItem(_props.songCount - 1);
+    _listModel.remove(_props.songCount - 1);
+    songCount = _listModel.getNItems;
+    return item;
   }
 
   /**
@@ -416,6 +415,7 @@ class SongColumnView : ColumnView, PropIface
       _songItems[item.song] = item;
 
     _listModel.splice(position, nRemovals, cast(ObjectWrap[])additions);
+    songCount = _listModel.getNItems;
   }
 
   /**
@@ -429,6 +429,7 @@ class SongColumnView : ColumnView, PropIface
     {
       _songItems.remove(item.song);
       _listModel.remove(position);
+      songCount = _listModel.getNItems;
     }
   }
 
@@ -437,6 +438,7 @@ class SongColumnView : ColumnView, PropIface
   {
     _songItems.clear;
     _listModel.removeAll;
+    songCount = 0;
   }
 
   /// Clear the selection

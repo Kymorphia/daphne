@@ -73,6 +73,7 @@ MIT license`;
 
 		connectActivate(&onActivate);
 		connectStartup(&onStartup);
+    connectShutdown(() { quit; });
     connectHandleLocalOptions(&onHandleLocalOptions);
 
     // Have to translate command line option descriptions at runtime
@@ -266,8 +267,8 @@ MIT license`;
       songView.filterAlbums(selectedAlbums);
     });
 
-    playQueue.propChanged.connect((PropIface propObj, string propName, StdVariant val, StdVariant oldVal) {
-      if (propName == "currentSong")
+    player.propChanged.connect((propObj, propName, val, oldVal) {
+      if (propName == "song")
         if (auto song = val.get!LibrarySong.ifThrown(null))
           coverDisplay.song = song;
     });
